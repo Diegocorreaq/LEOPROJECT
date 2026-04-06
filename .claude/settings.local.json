@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\\\Users\\\\diego.correa\\\\Documents\\\\APP WEB GRUPO LEO\\\\grupo-leo\")",
+      "Bash(npm install:*)",
+      "Bash(npx vite:*)"
+    ]
+  }
+}
