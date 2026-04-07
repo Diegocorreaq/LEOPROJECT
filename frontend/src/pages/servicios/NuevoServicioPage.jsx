@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -378,7 +378,6 @@ export default function NuevoServicioPage() {
                     {form._conductor && (
                       <p className="mt-1.5 text-xs text-slate-500">
                         {form._conductor.tipoDocumento} {form._conductor.nroDocumento}
-                        {form._conductor.licencia ? ` · Lic. ${form._conductor.licencia}` : ""}
                       </p>
                     )}
                   </Field>

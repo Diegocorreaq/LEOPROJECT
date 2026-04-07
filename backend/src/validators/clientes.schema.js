@@ -1,30 +1,72 @@
 const { z } = require("zod");
 
+function optionalTrimmedString(max, label) {
+  return z.preprocess(
+    (value) => {
+      if (value === undefined) return undefined;
+      if (value === null) return null;
+      if (typeof value === "string") {
+        const normalized = value.trim();
+        return normalized === "" ? null : normalized;
+      }
+      return value;
+    },
+    z.string().max(max, `${label} demasiado largo`).nullable().optional()
+  );
+}
+
 const createClienteSchema = z.object({
   razonSocial: z
-    .string({ required_error: "Razón social es requerida" })
-    .min(2, "Razón social demasiado corta")
-    .max(300, "Razón social demasiado larga")
-    .trim(),
+    .string({ required_error: "Razon social es requerida" })
+    .trim()
+    .min(2, "Razon social demasiado corta")
+    .max(300, "Razon social demasiado larga"),
   ruc: z
     .string({ required_error: "RUC es requerido" })
-    .regex(/^\d{11}$/, "El RUC debe tener exactamente 11 dígitos numéricos")
-    .trim(),
-  email: z.string().email("Formato de email inválido").max(254).trim().optional().nullable(),
-  telefono: z.string().max(30, "Teléfono demasiado largo").trim().optional().nullable(),
-  direccion: z.string().max(500, "Dirección demasiado larga").trim().optional().nullable(),
+    .trim()
+    .regex(/^\d{11}$/, "El RUC debe tener exactamente 11 digitos numericos"),
+  email: z.preprocess(
+    (value) => {
+      if (value === undefined) return undefined;
+      if (value === null) return null;
+      if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        return normalized === "" ? null : normalized;
+      }
+      return value;
+    },
+    z.string().email("Formato de email invalido").max(254).nullable().optional()
+  ),
+  telefono: optionalTrimmedString(30, "Telefono"),
+  direccion: optionalTrimmedString(500, "Direccion"),
 });
 
-const updateClienteSchema = z.object({
-  razonSocial: z.string().min(2).max(300).trim().optional(),
-  ruc: z
-    .string()
-    .regex(/^\d{11}$/, "El RUC debe tener exactamente 11 dígitos numéricos")
-    .trim()
-    .optional(),
-  email: z.string().email("Formato de email inválido").max(254).trim().optional().nullable(),
-  telefono: z.string().max(30).trim().optional().nullable(),
-  direccion: z.string().max(500).trim().optional().nullable(),
-});
+const updateClienteSchema = z
+  .object({
+    razonSocial: z.string().trim().min(2, "Razon social demasiado corta").max(300, "Razon social demasiado larga").optional(),
+    ruc: z
+      .string()
+      .trim()
+      .regex(/^\d{11}$/, "El RUC debe tener exactamente 11 digitos numericos")
+      .optional(),
+    email: z.preprocess(
+      (value) => {
+        if (value === undefined) return undefined;
+        if (value === null) return null;
+        if (typeof value === "string") {
+          const normalized = value.trim().toLowerCase();
+          return normalized === "" ? null : normalized;
+        }
+        return value;
+      },
+      z.string().email("Formato de email invalido").max(254).nullable().optional()
+    ),
+    telefono: optionalTrimmedString(30, "Telefono"),
+    direccion: optionalTrimmedString(500, "Direccion"),
+  })
+  .refine((data) => Object.values(data).some((value) => value !== undefined), {
+    message: "Debes enviar al menos un campo para actualizar.",
+    path: ["body"],
+  });
 
 module.exports = { createClienteSchema, updateClienteSchema };

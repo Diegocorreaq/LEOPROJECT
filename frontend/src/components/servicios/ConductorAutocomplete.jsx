@@ -4,19 +4,6 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 
-/**
- * ConductorAutocomplete — input con sugerencias de conductores desde la BD.
- *
- * Props:
- *   value        string           texto actual del input (nombre completo para mostrar)
- *   onChange     (text) => void   cuando el usuario escribe libremente
- *   onSelect     (conductor) => void  cuando selecciona una sugerencia
- *   placeholder  string
- *   disabled     boolean
- *   soloPropio   boolean          filtra propietarioSubcontratadoId: null
- *   mustSelect   boolean          si true, el texto libre sin selección se marca como inválido
- *   className    string
- */
 export default function ConductorAutocomplete({
   value = "",
   onChange,
@@ -27,25 +14,21 @@ export default function ConductorAutocomplete({
   mustSelect = false,
   className,
 }) {
-  const [sugerencias, setSugerencias]   = useState([]);
+  const [sugerencias, setSugerencias] = useState([]);
   const [showSugerencias, setShowSugerencias] = useState(false);
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading] = useState(false);
   const [seleccionado, setSeleccionado] = useState(false);
 
-  const dropdownRef  = useRef(null);
-  const debounceRef  = useRef(null);
-  // Ref que impide que el useEffect resetee seleccionado cuando el cambio
-  // de value vino de una selección (no de escritura manual).
+  const dropdownRef = useRef(null);
+  const debounceRef = useRef(null);
   const justSelected = useRef(false);
 
-  // ── Búsqueda con debounce ────────────────────────────────────────────────────
   useEffect(() => {
-    if (disabled) return;
+    if (disabled) return undefined;
 
-    // Si el cambio de value fue provocado por handleSelect, ignorar este ciclo.
     if (justSelected.current) {
       justSelected.current = false;
-      return;
+      return undefined;
     }
 
     clearTimeout(debounceRef.current);
@@ -54,7 +37,7 @@ export default function ConductorAutocomplete({
     if (!value || value.trim().length < 1) {
       setSugerencias([]);
       setShowSugerencias(false);
-      return;
+      return undefined;
     }
 
     debounceRef.current = setTimeout(async () => {
@@ -76,23 +59,23 @@ export default function ConductorAutocomplete({
     return () => clearTimeout(debounceRef.current);
   }, [value, disabled, soloPropio]);
 
-  // ── Cerrar dropdown al hacer click fuera ────────────────────────────────────
   useEffect(() => {
-    function onClickOutside(e) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+    function onClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowSugerencias(false);
       }
     }
+
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // ── Seleccionar sugerencia ───────────────────────────────────────────────────
   function handleSelect(conductor) {
     const nombreCompleto = [conductor.nombre, conductor.apPaterno, conductor.apMaterno]
       .filter(Boolean)
       .join(" ");
-    justSelected.current = true;   // evita que el useEffect pise seleccionado
+
+    justSelected.current = true;
     clearTimeout(debounceRef.current);
     onChange(nombreCompleto);
     setSeleccionado(true);
@@ -101,13 +84,10 @@ export default function ConductorAutocomplete({
     onSelect?.(conductor);
   }
 
-  function handleChange(val) {
-    onChange(val);
-    // No hace falta setSeleccionado(false) aquí; el useEffect lo hace
-    // porque justSelected.current sigue en false cuando el usuario escribe.
+  function handleChange(nextValue) {
+    onChange(nextValue);
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
   const isInvalid = mustSelect && !!value.trim() && !loading && !seleccionado;
 
   return (
@@ -115,7 +95,7 @@ export default function ConductorAutocomplete({
       <div className="relative">
         <Input
           value={value}
-          onChange={e => handleChange(e.target.value)}
+          onChange={(event) => handleChange(event.target.value)}
           onFocus={() => sugerencias.length > 0 && setShowSugerencias(true)}
           placeholder={placeholder}
           disabled={disabled}
@@ -124,7 +104,7 @@ export default function ConductorAutocomplete({
             "pr-9 transition-colors",
             seleccionado && "border-blue-300 bg-blue-50/50 focus-visible:ring-blue-300",
             isInvalid && "border-red-300 bg-red-50/40 focus-visible:ring-red-300",
-            className
+            className,
           )}
         />
         <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
@@ -135,34 +115,37 @@ export default function ConductorAutocomplete({
           ) : null}
         </div>
       </div>
+
       {isInvalid && (
         <p className="mt-1 text-xs text-red-500">
           Selecciona un conductor registrado desde las sugerencias.
         </p>
       )}
 
-      {/* Dropdown de sugerencias */}
       {showSugerencias && (
         <div className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
           <div className="max-h-48 overflow-y-auto">
-            {sugerencias.map((c, i) => {
-              const nombreCompleto = [c.nombre, c.apPaterno, c.apMaterno]
+            {sugerencias.map((conductor, index) => {
+              const nombreCompleto = [conductor.nombre, conductor.apPaterno, conductor.apMaterno]
                 .filter(Boolean)
                 .join(" ");
+
               return (
                 <button
-                  key={c.id}
+                  key={conductor.id}
                   type="button"
-                  onMouseDown={e => { e.preventDefault(); handleSelect(c); }}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    handleSelect(conductor);
+                  }}
                   className={cn(
                     "flex w-full flex-col items-start gap-0.5 px-4 py-2.5 text-left transition-colors hover:bg-slate-50",
-                    i < sugerencias.length - 1 && "border-b border-slate-100"
+                    index < sugerencias.length - 1 && "border-b border-slate-100",
                   )}
                 >
                   <span className="text-sm font-semibold text-slate-800">{nombreCompleto}</span>
                   <span className="text-xs text-slate-400">
-                    {c.tipoDocumento} {c.nroDocumento}
-                    {c.licencia ? ` · Lic. ${c.licencia}` : ""}
+                    {conductor.tipoDocumento} {conductor.nroDocumento}
                   </span>
                 </button>
               );

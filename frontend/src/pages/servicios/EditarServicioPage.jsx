@@ -466,7 +466,6 @@ export default function EditarServicioPage() {
                     {form._conductor && (
                       <p className="mt-1.5 text-xs text-slate-500">
                         {form._conductor.tipoDocumento} {form._conductor.nroDocumento}
-                        {form._conductor.licencia ? ` · Lic. ${form._conductor.licencia}` : ""}
                       </p>
                     )}
                   </Field>

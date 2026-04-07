@@ -24,6 +24,37 @@ const router = express.Router();
 router.use(authMiddleware);
 router.use(requireOperaciones);
 
+async function validarRecursosPropiosActivos(db, { vehiculoId, conductorId }) {
+  const [vehiculo, conductor] = await Promise.all([
+    db.vehiculo.findUnique({
+      where: { id: vehiculoId },
+      select: { id: true, tipo: true, estado: true },
+    }),
+    db.conductor.findUnique({
+      where: { id: conductorId },
+      select: { id: true, tipo: true, activo: true },
+    }),
+  ]);
+
+  if (!vehiculo || vehiculo.tipo !== "PROPIO") {
+    return { status: 400, error: "Debes seleccionar un vehiculo propio valido." };
+  }
+
+  if (vehiculo.estado !== "ACTIVO") {
+    return { status: 409, error: "Solo puedes registrar servicios con vehiculos propios activos." };
+  }
+
+  if (!conductor || conductor.tipo !== "PROPIO") {
+    return { status: 400, error: "Debes seleccionar un conductor propio valido." };
+  }
+
+  if (!conductor.activo) {
+    return { status: 409, error: "Solo puedes registrar servicios con conductores propios activos." };
+  }
+
+  return null;
+}
+
 // Relaciones estándar en queries
 const servicioInclude = {
   vehiculo:  { include: { propietarioSubcontratado: true } },
@@ -96,6 +127,17 @@ router.post("/", async (req, res, next) => {
 
     let finalVehiculoId = vehiculoId;
     let finalConductorId = conductorId;
+
+    if (tipoContrato === "PROPIO") {
+      const validacion = await validarRecursosPropiosActivos(prisma, {
+        vehiculoId: finalVehiculoId,
+        conductorId: finalConductorId,
+      });
+
+      if (validacion) {
+        return res.status(validacion.status).json({ error: validacion.error });
+      }
+    }
 
     // ── Transacción para SUBCONTRATADO ────────────────────────────────────
     if (tipoContrato === "SUBCONTRATADO" && subcontratado) {
@@ -229,8 +271,34 @@ router.put("/:id", async (req, res, next) => {
 
     const { fechaServicio, origen, destino, estado, observaciones } = body;
 
-    const existing = await prisma.servicio.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.servicio.findUnique({
+      where: { id: req.params.id },
+      include: {
+        vehiculo: {
+          select: { tipo: true },
+        },
+      },
+    });
     if (!existing) return res.status(404).json({ error: "Servicio no encontrado" });
+
+    const tipoContratoFinal = tipoContrato ?? (existing.vehiculo?.tipo === "SUBCONTRATADO" ? "SUBCONTRATADO" : "PROPIO");
+    const finalVehiculoPropioId = tipoContratoFinal === "PROPIO"
+      ? (vehiculoId || existing.vehiculoId)
+      : null;
+    const finalConductorPropioId = tipoContratoFinal === "PROPIO"
+      ? (conductorId || existing.conductorId)
+      : null;
+
+    if (tipoContratoFinal === "PROPIO") {
+      const validacion = await validarRecursosPropiosActivos(prisma, {
+        vehiculoId: finalVehiculoPropioId,
+        conductorId: finalConductorPropioId,
+      });
+
+      if (validacion) {
+        return res.status(validacion.status).json({ error: validacion.error });
+      }
+    }
 
     const servicio = await prisma.$transaction(async (tx) => {
       // ── Resolver vehículo y conductor finales ─────────────────────────────
