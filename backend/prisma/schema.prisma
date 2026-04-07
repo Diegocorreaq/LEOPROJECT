@@ -116,51 +116,72 @@ model ServicioCliente {
 }
 
 model GuiaRemision {
-  id                  String               @id @default(uuid())
-  servicioId          String
-  servicio            Servicio             @relation(fields: [servicioId], references: [id])
-  serie               String
-  numero              String
-  fechaEmision        DateTime
-  fechaInicioTraslado DateTime?
-  puntoDeSalida       String?
-  puntoDeLlegada      String?
-  remitenteNombre     String?
-  remitenteRuc        String?
-  destinatarioNombre  String?
-  destinatarioRuc     String?
-  pagadorFleteNombre  String?
-  pagadorFleteRuc     String?
-  transbordo          Boolean              @default(false)
-  retornoVacio        Boolean              @default(false)
-  subcontratado       Boolean              @default(false)
-  estado              String               @default("EMITIDA")
-  fechaRecepcion      DateTime?
-  observaciones       String?
-  bienes              GuiaBien[]
-  docsRelacionados    GuiaDocRelacionado[]
+  id                          String               @id @default(uuid())
+  servicioId                  String?
+  servicio                    Servicio?            @relation(fields: [servicioId], references: [id])
+  serie                       String
+  numero                      String
+  fechaEmision                DateTime
+  horaEmision                 String?
+  fechaInicioTraslado         DateTime?
+  puntoDeSalida               String?
+  puntoDeLlegada              String?
+  remitenteNombre             String?
+  remitenteRuc                String?
+  destinatarioNombre          String?
+  destinatarioRuc             String?
+  pagadorFleteNombre          String?
+  pagadorFleteRuc             String?
+  transportistaNombre         String?
+  transportistaRuc            String?
+  placaPrincipal              String?
+  placaSecundaria             String?
+  conductorPrincipalNombre    String?
+  conductorPrincipalDocumento String?
+  conductorPrincipalLicencia  String?
+  pesoBrutoTotal              Decimal?
+  unidadPeso                  String?
+  mtcNumero                   String?
+  subcontratistaNombre        String?
+  subcontratistaRuc           String?
+  transbordo                  Boolean              @default(false)
+  retornoVacio                Boolean              @default(false)
+  subcontratado               Boolean              @default(false)
+  estado                      String               @default("EMITIDA")
+  fechaRecepcion              DateTime?
+  observaciones               String?
+  observacionSunat            String?
+  origenImportacion           String?
+  nombreArchivoOrigen         String?
+  rawPayload                  Json?
+  createdAt                   DateTime             @default(now())
+  updatedAt                   DateTime             @updatedAt
+  bienes                      GuiaBien[]
+  docsRelacionados            GuiaDocRelacionado[]
 
   @@unique([serie, numero])
 }
 
 model GuiaBien {
-  id             String       @id @default(uuid())
-  guiaRemisionId String
-  guiaRemision   GuiaRemision @relation(fields: [guiaRemisionId], references: [id])
-  descripcion    String
-  unidadMedida   String?
-  cantidadKg     Decimal?
-  bienNormalizado String?
-  codigoSunat    String?
-}
-
-model GuiaDocRelacionado {
   id              String       @id @default(uuid())
   guiaRemisionId  String
   guiaRemision    GuiaRemision @relation(fields: [guiaRemisionId], references: [id])
-  tipoDocumento   String
-  numeroDocumento String
-  rucEmisor       String?
+  descripcion     String
+  cantidad        Decimal?
+  unidadMedida    String?
+  cantidadKg      Decimal?
+  bienNormalizado String?
+  codigoSunat     String?
+}
+
+model GuiaDocRelacionado {
+  id                String       @id @default(uuid())
+  guiaRemisionId    String
+  guiaRemision      GuiaRemision @relation(fields: [guiaRemisionId], references: [id])
+  tipoDocumentoCode String?
+  tipoDocumento     String
+  numeroDocumento   String
+  rucEmisor         String?
 }
 
 model Liquidacion {

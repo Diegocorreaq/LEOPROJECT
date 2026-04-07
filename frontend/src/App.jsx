@@ -19,6 +19,7 @@ import EditarConductorPage from "@/pages/conductores/EditarConductorPage";
 import ServiciosPage from "@/pages/servicios/ServiciosPage";
 import NuevoServicioPage from "@/pages/servicios/NuevoServicioPage";
 import EditarServicioPage from "@/pages/servicios/EditarServicioPage";
+import GuiasPage from "@/pages/guias/GuiasPage";
 
 const Placeholder = ({ title }) => (
   <div className="p-8">
@@ -61,7 +62,7 @@ export default function App() {
             <Route path="conductores/:id" element={<ConductorDetallePage />} />
             <Route path="conductores/:id/editar" element={<EditarConductorPage />} />
 
-            <Route path="guias" element={<Placeholder title="Guias de Remision" />} />
+            <Route path="guias" element={<GuiasPage />} />
             <Route path="liquidaciones" element={<Placeholder title="Liquidaciones" />} />
             <Route path="facturacion" element={<Placeholder title="Facturacion" />} />
             <Route path="rutas" element={<Placeholder title="Rutas & Tarifas" />} />

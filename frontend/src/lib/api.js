@@ -57,4 +57,28 @@ export const api = {
   put: (path, body) => request(path, { method: "PUT", body: JSON.stringify(body) }),
   patch: (path, body) => request(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: (path) => request(path, { method: "DELETE" }),
+
+  // Para subida de archivos (multipart/form-data).
+  // NO pasar Content-Type — el browser lo setea con el boundary correcto.
+  upload: async (path, formData) => {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+    let data = {};
+    const ct = res.headers.get("content-type");
+    if (ct && ct.includes("application/json")) {
+      data = await res.json();
+    }
+    if (!res.ok) {
+      if (res.status === 401) throw new AuthError(data?.error || "Sesion expirada.");
+      throw new ApiError(data?.error || `Error ${res.status}`, {
+        status: res.status,
+        details: data?.detalles,
+        payload: data,
+      });
+    }
+    return data;
+  },
 };

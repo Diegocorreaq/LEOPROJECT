@@ -20,7 +20,9 @@
       "Bash(taskkill /F /PID 28752)",
       "Bash(netstat -ano)",
       "Bash(findstr :3000)",
-      "Bash(node -e \"require\\(''dotenv/config''\\); require\\(''./src/routes/servicios''\\); console.log\\(''servicios.js OK''\\)\")"
+      "Bash(node -e \"require\\(''dotenv/config''\\); require\\(''./src/routes/servicios''\\); console.log\\(''servicios.js OK''\\)\")",
+      "Bash(node -e \"require\\('./src/routes/guias.js'\\); console.log\\('OK'\\)\")",
+      "Bash(node -e ':*)"
     ]
   }
 }
