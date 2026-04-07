@@ -6,6 +6,7 @@ import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import ServiciosPage from "@/pages/servicios/ServiciosPage";
 import NuevoServicioPage from "@/pages/servicios/NuevoServicioPage";
+import EditarServicioPage from "@/pages/servicios/EditarServicioPage";
 
 const Placeholder = ({ title }) => (
   <div className="p-8">
@@ -32,8 +33,9 @@ export default function App() {
             <Route index element={<DashboardPage />} />
 
             {/* Servicios */}
-            <Route path="servicios"       element={<ServiciosPage />} />
-            <Route path="servicios/nuevo" element={<NuevoServicioPage />} />
+            <Route path="servicios"                element={<ServiciosPage />} />
+            <Route path="servicios/nuevo"          element={<NuevoServicioPage />} />
+            <Route path="servicios/:id/editar"     element={<EditarServicioPage />} />
 
             {/* Resto — placeholders hasta que se construyan */}
             <Route path="guias"       element={<Placeholder title="Guías de Remisión" />} />

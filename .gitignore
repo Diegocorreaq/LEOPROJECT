@@ -1,4 +1,43 @@
+# Dependencias
 node_modules/
-.env
+**/node_modules/
+
+# Artefactos de build
 dist/
+**/dist/
+dist-ssr/
+build/
+
+# Variables de entorno — NUNCA subir al repositorio
+.env
+.env.local
+.env.production
+.env.*.local
+**/​.env
+**/.env.local
+**/.env.production
+
+# Prisma generado
+**/generated/prisma/
+
+# Logs
+*.log
+npm-debug.log*
+pino-debug.log*
+logs/
+
+# Editor / OS
 .DS_Store
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# Archivos temporales
+*.tmp
+*.temp
+.cache/

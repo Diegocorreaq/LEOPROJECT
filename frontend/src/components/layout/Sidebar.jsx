@@ -40,8 +40,8 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();     // borra cookie en el backend antes de redirigir
     navigate("/login");
   }
 

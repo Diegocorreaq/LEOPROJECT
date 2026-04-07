@@ -20,13 +20,18 @@ import { api } from "@/lib/api";
  * disallowedIds — array de clienteIds ya confirmados en otros bloques del mismo servicio.
  * Se usa para impedir que el mismo cliente sea agregado dos veces.
  */
-export default function ClienteBlock({ index, onConfirm, onUnconfirm, canRemove, onRemove, disallowedIds = [] }) {
-  const [razonSocial, setRazonSocial]   = useState("");
-  const [ruc, setRuc]                   = useState("");
-  const [clienteId, setClienteId]       = useState(null);
+/**
+ * initialData — objeto opcional { clienteId, razonSocial, ruc }.
+ * Si se provee, el bloque arranca en estado "confirmado" con esos datos.
+ * El padre es responsable de ya tener ese bloque en su estado `confirmed`.
+ */
+export default function ClienteBlock({ index, onConfirm, onUnconfirm, canRemove, onRemove, disallowedIds = [], initialData = null }) {
+  const [razonSocial, setRazonSocial]   = useState(initialData?.razonSocial ?? "");
+  const [ruc, setRuc]                   = useState(initialData?.ruc ?? "");
+  const [clienteId, setClienteId]       = useState(initialData?.clienteId ?? null);
   const [editingId, setEditingId]       = useState(null);   // ID del cliente en edición
   const [isExistente, setIsExistente]   = useState(false);  // seleccionado de sugerencias
-  const [isConfirmado, setIsConfirmado] = useState(false);
+  const [isConfirmado, setIsConfirmado] = useState(!!initialData);
 
   const [sugerencias, setSugerencias]         = useState([]);
   const [showSugerencias, setShowSugerencias] = useState(false);

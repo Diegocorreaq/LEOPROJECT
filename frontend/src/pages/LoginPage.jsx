@@ -24,7 +24,8 @@ export default function LoginPage() {
 
     try {
       const data = await api.post("/auth/login", { email, password });
-      login(data.token, data.usuario);
+      // El token viaja en cookie HttpOnly — solo usamos los datos del usuario
+      login(data.usuario);
       navigate("/");
     } catch (err) {
       setError(err.message);

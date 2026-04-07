@@ -1,25 +1,41 @@
+/**
+ * clientes.js — CRUD de clientes
+ *
+ * Cambios de seguridad:
+ *  - Validación Zod en POST y PUT
+ *  - RBAC: requireOperaciones
+ *  - Logging de auditoría en creación y modificación
+ */
+
 const express = require("express");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
+const { requireOperaciones } = require("../middleware/rbac");
+const logger = require("../lib/logger");
+const { validate } = require("../lib/validate");
+const { createClienteSchema, updateClienteSchema } = require("../validators/clientes.schema");
 
 const router = express.Router();
 router.use(authMiddleware);
+router.use(requireOperaciones);
 
-// GET /api/clientes/buscar
-// Soporta dos modos:
-//   ?texto=... → búsqueda parcial por razón social o RUC (top 10)
-//   ?ruc=...   → búsqueda exacta por RUC (retorna objeto o null)
-router.get("/buscar", async (req, res) => {
+// ── GET /api/clientes/buscar ───────────────────────────────────────────────
+// ?texto=... → búsqueda parcial por razón social o RUC (top 10)
+// ?ruc=...   → búsqueda exacta por RUC
+router.get("/buscar", async (req, res, next) => {
   try {
     const { texto, ruc } = req.query;
 
     // Modo legacy: búsqueda exacta por RUC
     if (ruc && !texto) {
-      const cliente = await prisma.cliente.findUnique({ where: { ruc } });
+      // Validar formato básico
+      if (!/^\d{1,11}$/.test(ruc.trim())) {
+        return res.json(null);
+      }
+      const cliente = await prisma.cliente.findUnique({ where: { ruc: ruc.trim() } });
       return res.json(cliente || null);
     }
 
-    // Modo autocomplete: búsqueda parcial
     if (!texto || texto.trim().length < 2) return res.json([]);
 
     const clientes = await prisma.cliente.findMany({
@@ -35,75 +51,78 @@ router.get("/buscar", async (req, res) => {
 
     res.json(clientes);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error al buscar clientes" });
+    next(err);
   }
 });
 
-// GET /api/clientes — listado completo
-router.get("/", async (req, res) => {
+// ── GET /api/clientes ──────────────────────────────────────────────────────
+router.get("/", async (req, res, next) => {
   try {
     const clientes = await prisma.cliente.findMany({ orderBy: { razonSocial: "asc" } });
     res.json(clientes);
   } catch (err) {
-    res.status(500).json({ error: "Error al obtener clientes" });
+    next(err);
   }
 });
 
-// POST /api/clientes — crear nuevo cliente
-router.post("/", async (req, res) => {
+// ── POST /api/clientes ─────────────────────────────────────────────────────
+router.post("/", async (req, res, next) => {
   try {
-    const { razonSocial, ruc } = req.body;
+    const body = validate(createClienteSchema, req.body, res);
+    if (!body) return;
 
-    if (!razonSocial?.trim()) return res.status(400).json({ error: "Debes ingresar la razón social." });
-    if (!ruc?.trim())          return res.status(400).json({ error: "Debes ingresar el RUC." });
-    if (!/^\d{11}$/.test(ruc.trim())) return res.status(400).json({ error: "El RUC debe tener 11 dígitos." });
+    const { razonSocial, ruc, email, telefono, direccion } = body;
 
-    const existe = await prisma.cliente.findUnique({ where: { ruc: ruc.trim() } });
-    if (existe) return res.status(409).json({ error: "Ya existe otro cliente registrado con ese RUC." });
+    const existe = await prisma.cliente.findUnique({ where: { ruc } });
+    if (existe) {
+      return res.status(409).json({ error: "Ya existe un cliente registrado con ese RUC." });
+    }
 
     const cliente = await prisma.cliente.create({
-      data: { razonSocial: razonSocial.trim(), ruc: ruc.trim() },
+      data: { razonSocial, ruc, email: email || null, telefono: telefono || null, direccion: direccion || null },
     });
+
+    logger.info("Cliente creado", { clienteId: cliente.id, ruc, usuarioId: req.user.id });
 
     res.status(201).json(cliente);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error al crear cliente" });
+    next(err);
   }
 });
 
-// PUT /api/clientes/:id — actualizar cliente existente
-// Valida unicidad de RUC excluyendo al propio registro
-router.put("/:id", async (req, res) => {
+// ── PUT /api/clientes/:id ──────────────────────────────────────────────────
+router.put("/:id", async (req, res, next) => {
   try {
-    const { razonSocial, ruc } = req.body;
+    const body = validate(updateClienteSchema, req.body, res);
+    if (!body) return;
 
     const cliente = await prisma.cliente.findUnique({ where: { id: req.params.id } });
-    if (!cliente) return res.status(404).json({ error: "No se encontró el cliente a editar." });
+    if (!cliente) return res.status(404).json({ error: "Cliente no encontrado." });
 
-    if (ruc && ruc.trim() !== cliente.ruc) {
-      if (!/^\d{11}$/.test(ruc.trim())) {
-        return res.status(400).json({ error: "El RUC debe tener 11 dígitos." });
-      }
-      const duplicado = await prisma.cliente.findUnique({ where: { ruc: ruc.trim() } });
+    // Verificar unicidad de RUC si cambia
+    if (body.ruc && body.ruc !== cliente.ruc) {
+      const duplicado = await prisma.cliente.findUnique({ where: { ruc: body.ruc } });
       if (duplicado && duplicado.id !== req.params.id) {
-        return res.status(409).json({ error: "Ya existe otro cliente registrado con ese RUC." });
+        return res.status(409).json({ error: "Ya existe otro cliente con ese RUC." });
       }
     }
 
     const actualizado = await prisma.cliente.update({
       where: { id: req.params.id },
       data: {
-        ...(razonSocial?.trim() && { razonSocial: razonSocial.trim() }),
-        ...(ruc?.trim()          && { ruc: ruc.trim() }),
+        ...(body.razonSocial !== undefined && { razonSocial: body.razonSocial }),
+        ...(body.ruc         !== undefined && { ruc: body.ruc }),
+        ...(body.email       !== undefined && { email: body.email }),
+        ...(body.telefono    !== undefined && { telefono: body.telefono }),
+        ...(body.direccion   !== undefined && { direccion: body.direccion }),
       },
     });
 
+    logger.info("Cliente actualizado", { clienteId: req.params.id, usuarioId: req.user.id });
+
     res.json(actualizado);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error al actualizar cliente" });
+    next(err);
   }
 });
 

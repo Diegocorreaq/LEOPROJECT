@@ -7,11 +7,20 @@
       "Bash(npx prisma:*)",
       "Bash(npx shadcn@latest add button input label card --yes)",
       "Bash(npm run:*)",
-      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s http://localhost:300/)",
       "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"email\"\":\"\"gean@grupleo.com\"\",\"\"password\"\":\"\"admin123\"\"}')",
       "Bash(node -e \":*)",
       "Bash(cmd //c \"taskkill /F /PID 27708\")",
-      "Bash(npx shadcn@latest add select textarea badge separator --yes)"
+      "Bash(npx shadcn@latest add select textarea badge separator --yes)",
+      "Bash(find 'C:\\\\Users\\\\diego.correa\\\\Documents\\\\APP WEB GRUPO LEO\\\\grupo-leo' -type f -name .env* -o -name .gitignore)",
+      "Bash(node -e \"console.log\\(require\\(''crypto''\\).randomBytes\\(48\\).toString\\(''hex''\\)\\)\")",
+      "Bash(node -e \"require\\(''./src/config/env''\\); console.log\\(''env.js OK''\\)\")",
+      "Bash(timeout 5 node src/index.js)",
+      "Bash(timeout 6 node src/index.js)",
+      "Bash(taskkill /F /PID 28752)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :3000)",
+      "Bash(node -e \"require\\(''dotenv/config''\\); require\\(''./src/routes/servicios''\\); console.log\\(''servicios.js OK''\\)\")"
     ]
   }
 }

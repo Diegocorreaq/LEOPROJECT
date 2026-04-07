@@ -1,14 +1,25 @@
+/**
+ * conductores.js — Consulta de conductores
+ *
+ * Cambios de seguridad:
+ *  - RBAC: requireOperaciones
+ *  - Sanitización de parámetros de query
+ *  - Propagación de errores al error handler centralizado
+ */
+
 const express = require("express");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
+const { requireOperaciones } = require("../middleware/rbac");
 
 const router = express.Router();
 router.use(authMiddleware);
+router.use(requireOperaciones);
 
-// GET /api/conductores/buscar
-// ?texto=...        búsqueda parcial por nombre, apellido paterno o nroDocumento (mín. 1 char)
-// &soloPropio=true  solo conductores propios (propietarioSubcontratadoId: null)
-router.get("/buscar", async (req, res) => {
+// ── GET /api/conductores/buscar ────────────────────────────────────────────
+// ?texto=...        búsqueda parcial por nombre, apellido o nroDocumento
+// &soloPropio=true  solo conductores propios
+router.get("/buscar", async (req, res, next) => {
   try {
     const { texto, soloPropio } = req.query;
 
@@ -34,27 +45,23 @@ router.get("/buscar", async (req, res) => {
 
     res.json(conductores);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error al buscar conductores" });
+    next(err);
   }
 });
 
-// GET /api/conductores
-// Devuelve conductores propios: sin propietarioSubcontratado asignado.
-// Acepta cualquier registro insertado directamente en la BD.
-router.get("/", async (req, res) => {
+// ── GET /api/conductores ───────────────────────────────────────────────────
+router.get("/", async (req, res, next) => {
   try {
     const conductores = await prisma.conductor.findMany({
       where: {
         activo: true,
-        propietarioSubcontratadoId: null, // sin empresa externa = propio
+        propietarioSubcontratadoId: null,
       },
       orderBy: [{ apPaterno: "asc" }, { nombre: "asc" }],
     });
     res.json(conductores);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error al obtener conductores" });
+    next(err);
   }
 });
 
