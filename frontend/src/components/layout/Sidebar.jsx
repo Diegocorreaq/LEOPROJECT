@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -61,7 +62,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      <nav className="sidebar-scrollbar flex-1 overflow-y-auto px-3 py-4">
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
           Menú principal
         </p>
@@ -80,7 +81,7 @@ export default function Sidebar() {
                   )
                 }
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                {createElement(Icon, { className: "h-4 w-4 shrink-0" })}
                 {label}
               </NavLink>
             </li>
