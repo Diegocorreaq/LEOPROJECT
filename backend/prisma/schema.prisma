@@ -1,11 +1,303 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id           String   @id @default(uuid())
+  nombre       String
+  email        String   @unique
+  passwordHash String
+  rol          String
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+model Cliente {
+  id          String            @id @default(uuid())
+  razonSocial String
+  ruc         String            @unique
+  email       String?
+  telefono    String?
+  direccion   String?
+  createdAt   DateTime          @default(now())
+  servicios   ServicioCliente[]
+  facturas    Factura[]
+}
+
+model PropietarioSubcontratado {
+  id          String      @id @default(uuid())
+  razonSocial String
+  ruc         String      @unique
+  contacto    String?
+  telefono    String?
+  vehiculos   Vehiculo[]
+  conductores Conductor[]
+}
+
+model Vehiculo {
+  id                         String                    @id @default(uuid())
+  propietarioSubcontratadoId String?
+  propietarioSubcontratado   PropietarioSubcontratado? @relation(fields: [propietarioSubcontratadoId], references: [id])
+  placa                      String                    @unique
+  placaCarreta               String?
+  tipoUnidad                 String
+  tipo                       String
+  mtc                        String?
+  mtcCarreta                 String?
+  pesoNeto                   Decimal?
+  pesoBruto                  Decimal?
+  cargaUtil                  Decimal?
+  estado                     String                    @default("ACTIVO")
+  servicios                  Servicio[]
+  docsVehiculo               DocVehiculo[]
+  mantenimientos             MantenimientoKm[]
+}
+
+model Conductor {
+  id                         String                    @id @default(uuid())
+  propietarioSubcontratadoId String?
+  propietarioSubcontratado   PropietarioSubcontratado? @relation(fields: [propietarioSubcontratadoId], references: [id])
+  nombre                     String
+  apPaterno                  String
+  apMaterno                  String?
+  tipoDocumento              String
+  nroDocumento               String
+  licencia                   String?
+  tipo                       String
+  activo                     Boolean                   @default(true)
+  servicios                  Servicio[]
+  liquidaciones              Liquidacion[]
+}
+
+model RutaTarifa {
+  id          String          @id @default(uuid())
+  codigoRuta  String
+  origen      String
+  destino     String
+  descripcion String?
+  tarifa1tn   Decimal?
+  tarifa2tn   Decimal?
+  tarifa5tn   Decimal?
+  tarifa10tn  Decimal?
+  tarifa30tn  Decimal?
+  ordenes     OrdenServicio[]
+}
+
+model Servicio {
+  id            String            @id @default(uuid())
+  vehiculoId    String
+  vehiculo      Vehiculo          @relation(fields: [vehiculoId], references: [id])
+  conductorId   String
+  conductor     Conductor         @relation(fields: [conductorId], references: [id])
+  fechaServicio DateTime
+  origen        String
+  destino       String
+  estado        String            @default("PROGRAMADO")
+  observaciones String?
+  createdAt     DateTime          @default(now())
+  clientes      ServicioCliente[]
+  guias         GuiaRemision[]
+  liquidacion   Liquidacion?
+  orden         OrdenServicio?
+}
+
+model ServicioCliente {
+  id         String   @id @default(uuid())
+  servicioId String
+  servicio   Servicio @relation(fields: [servicioId], references: [id])
+  clienteId  String
+  cliente    Cliente  @relation(fields: [clienteId], references: [id])
+
+  @@unique([servicioId, clienteId])
+}
+
+model GuiaRemision {
+  id                  String               @id @default(uuid())
+  servicioId          String
+  servicio            Servicio             @relation(fields: [servicioId], references: [id])
+  serie               String
+  numero              String
+  fechaEmision        DateTime
+  fechaInicioTraslado DateTime?
+  puntoDeSalida       String?
+  puntoDeLlegada      String?
+  remitenteNombre     String?
+  remitenteRuc        String?
+  destinatarioNombre  String?
+  destinatarioRuc     String?
+  pagadorFleteNombre  String?
+  pagadorFleteRuc     String?
+  transbordo          Boolean              @default(false)
+  retornoVacio        Boolean              @default(false)
+  subcontratado       Boolean              @default(false)
+  estado              String               @default("EMITIDA")
+  fechaRecepcion      DateTime?
+  observaciones       String?
+  bienes              GuiaBien[]
+  docsRelacionados    GuiaDocRelacionado[]
+
+  @@unique([serie, numero])
+}
+
+model GuiaBien {
+  id             String       @id @default(uuid())
+  guiaRemisionId String
+  guiaRemision   GuiaRemision @relation(fields: [guiaRemisionId], references: [id])
+  descripcion    String
+  unidadMedida   String?
+  cantidadKg     Decimal?
+  bienNormalizado String?
+  codigoSunat    String?
+}
+
+model GuiaDocRelacionado {
+  id              String       @id @default(uuid())
+  guiaRemisionId  String
+  guiaRemision    GuiaRemision @relation(fields: [guiaRemisionId], references: [id])
+  tipoDocumento   String
+  numeroDocumento String
+  rucEmisor       String?
+}
+
+model Liquidacion {
+  id             String                   @id @default(uuid())
+  servicioId     String                   @unique
+  servicio       Servicio                 @relation(fields: [servicioId], references: [id])
+  conductorId    String
+  conductor      Conductor                @relation(fields: [conductorId], references: [id])
+  montoEntregado Decimal                  @default(0)
+  viaticos       Decimal                  @default(0)
+  peajes         Decimal                  @default(0)
+  combustible    Decimal                  @default(0)
+  galones        Decimal                  @default(0)
+  otros          Decimal                  @default(0)
+  totalGastos    Decimal                  @default(0)
+  saldo          Decimal                  @default(0)
+  detalleSaldo   String?
+  status         String                   @default("PENDIENTE")
+  createdAt      DateTime                 @default(now())
+  comprobantes   LiquidacionComprobante[]
+}
+
+model LiquidacionComprobante {
+  id            String      @id @default(uuid())
+  liquidacionId String
+  liquidacion   Liquidacion @relation(fields: [liquidacionId], references: [id])
+  tipo          String
+  numero        String?
+  descripcion   String?
+  monto         Decimal
+  urlArchivo    String?
+  createdAt     DateTime    @default(now())
+}
+
+model OrdenServicio {
+  id                String      @id @default(uuid())
+  servicioId        String      @unique
+  servicio          Servicio    @relation(fields: [servicioId], references: [id])
+  rutaTarifaId      String?
+  rutaTarifa        RutaTarifa? @relation(fields: [rutaTarifaId], references: [id])
+  numero            String?
+  fleteNeto         Decimal     @default(0)
+  igv               Decimal     @default(0)
+  total             Decimal     @default(0)
+  fleteTercero      Decimal     @default(0)
+  incluyeIgv        Boolean     @default(true)
+  detraccion        Decimal     @default(0)
+  estado            String      @default("PENDIENTE")
+  fechaEnvioCliente DateTime?
+  fechaSelloCliente DateTime?
+  createdAt         DateTime    @default(now())
+  facturas          Factura[]
+}
+
+model Factura {
+  id                   String        @id @default(uuid())
+  ordenServicioId      String
+  ordenServicio        OrdenServicio @relation(fields: [ordenServicioId], references: [id])
+  clienteId            String
+  cliente              Cliente       @relation(fields: [clienteId], references: [id])
+  serie                String
+  numero               String
+  tipo                 String
+  fechaEmision         DateTime
+  montoNeto            Decimal       @default(0)
+  igv                  Decimal       @default(0)
+  total                Decimal       @default(0)
+  detraccionPorcentaje Decimal       @default(0)
+  detraccionMonto      Decimal       @default(0)
+  estadoPago           String        @default("PENDIENTE")
+  formaPago            String?
+  createdAt            DateTime      @default(now())
+  guias                FacturaGuia[]
+  pagos                Pago[]
+
+  @@unique([serie, numero])
+}
+
+model FacturaGuia {
+  id         String   @id @default(uuid())
+  facturaId  String
+  factura    Factura  @relation(fields: [facturaId], references: [id])
+  serieGuia  String
+  numeroGuia String
+  createdAt  DateTime @default(now())
+}
+
+model Pago {
+  id              String   @id @default(uuid())
+  facturaId       String
+  factura         Factura  @relation(fields: [facturaId], references: [id])
+  fechaPago       DateTime
+  monto           Decimal
+  medioPago       String?
+  numeroOperacion String?
+  cuentaBancaria  String?
+  identificado    Boolean  @default(false)
+  observacion     String?
+  createdAt       DateTime @default(now())
+}
+
+model LibroCompras {
+  id              String    @id @default(uuid())
+  numeroFactura   String
+  proveedorNombre String?
+  proveedorRuc    String?
+  fechaEmision    DateTime?
+  montoNeto       Decimal   @default(0)
+  igv             Decimal   @default(0)
+  total           Decimal   @default(0)
+  concepto        String?
+  estado          String    @default("PENDIENTE")
+  createdAt       DateTime  @default(now())
+}
+
+model DocVehiculo {
+  id               String    @id @default(uuid())
+  vehiculoId       String
+  vehiculo         Vehiculo  @relation(fields: [vehiculoId], references: [id])
+  tipoDoc          String
+  fechaVencimiento DateTime?
+  fechaAnterior    DateTime?
+  observacion      String?
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([vehiculoId, tipoDoc])
+}
+
+model MantenimientoKm {
+  id                  String   @id @default(uuid())
+  vehiculoId          String
+  vehiculo            Vehiculo @relation(fields: [vehiculoId], references: [id])
+  componente          String
+  kmPermitido         Decimal  @default(0)
+  kmAcumulado         Decimal  @default(0)
+  rendimientoEstandar Decimal  @default(0)
+  updatedAt           DateTime @updatedAt
+
+  @@unique([vehiculoId, componente])
 }

@@ -3,7 +3,14 @@
     "allow": [
       "Bash(dir \"C:\\\\Users\\\\diego.correa\\\\Documents\\\\APP WEB GRUPO LEO\\\\grupo-leo\")",
       "Bash(npm install:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npx shadcn@latest add button input label card --yes)",
+      "Bash(npm run:*)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"email\"\":\"\"gean@grupleo.com\"\",\"\"password\"\":\"\"admin123\"\"}')",
+      "Bash(node -e \":*)",
+      "Bash(cmd //c \"taskkill /F /PID 27708\")"
     ]
   }
 }

@@ -14,8 +14,8 @@ app.get("/", (req, res) => {
   res.json({ message: "Grupo Leo API funcionando correctamente", status: "ok" });
 });
 
-// Routes (se agregarán aquí)
-// app.use("/api/auth", require("./routes/auth"));
+// Routes
+app.use("/api/auth", require("./routes/auth"));
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
