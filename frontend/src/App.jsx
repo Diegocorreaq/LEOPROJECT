@@ -4,16 +4,24 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
+import ServiciosPage from "@/pages/servicios/ServiciosPage";
+import NuevoServicioPage from "@/pages/servicios/NuevoServicioPage";
+
+const Placeholder = ({ title }) => (
+  <div className="p-8">
+    <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+  </div>
+);
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public routes */}
+          {/* Public */}
           <Route path="/login" element={<LoginPage />} />
 
-          {/* Protected routes */}
+          {/* Protected */}
           <Route
             element={
               <ProtectedRoute>
@@ -22,18 +30,22 @@ export default function App() {
             }
           >
             <Route index element={<DashboardPage />} />
-            <Route path="servicios" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Servicios</h1></div>} />
-            <Route path="guias" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Guías de Remisión</h1></div>} />
-            <Route path="liquidaciones" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Liquidaciones</h1></div>} />
-            <Route path="facturacion" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Facturación</h1></div>} />
-            <Route path="clientes" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Clientes</h1></div>} />
-            <Route path="vehiculos" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Vehículos</h1></div>} />
-            <Route path="conductores" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Conductores</h1></div>} />
-            <Route path="rutas" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Rutas & Tarifas</h1></div>} />
-            <Route path="compras" element={<div className="p-8"><h1 className="text-2xl font-bold text-slate-900">Libro de Compras</h1></div>} />
+
+            {/* Servicios */}
+            <Route path="servicios"       element={<ServiciosPage />} />
+            <Route path="servicios/nuevo" element={<NuevoServicioPage />} />
+
+            {/* Resto — placeholders hasta que se construyan */}
+            <Route path="guias"       element={<Placeholder title="Guías de Remisión" />} />
+            <Route path="liquidaciones" element={<Placeholder title="Liquidaciones" />} />
+            <Route path="facturacion" element={<Placeholder title="Facturación" />} />
+            <Route path="clientes"    element={<Placeholder title="Clientes" />} />
+            <Route path="vehiculos"   element={<Placeholder title="Vehículos" />} />
+            <Route path="conductores" element={<Placeholder title="Conductores" />} />
+            <Route path="rutas"       element={<Placeholder title="Rutas & Tarifas" />} />
+            <Route path="compras"     element={<Placeholder title="Libro de Compras" />} />
           </Route>
 
-          {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>

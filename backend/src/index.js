@@ -16,6 +16,10 @@ app.get("/", (req, res) => {
 
 // Routes
 app.use("/api/auth", require("./routes/auth"));
+app.use("/api/servicios", require("./routes/servicios"));
+app.use("/api/vehiculos", require("./routes/vehiculos"));
+app.use("/api/conductores", require("./routes/conductores"));
+app.use("/api/clientes", require("./routes/clientes"));
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);

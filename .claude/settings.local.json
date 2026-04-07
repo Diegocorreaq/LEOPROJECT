@@ -10,7 +10,8 @@
       "Bash(curl -s http://localhost:3000/)",
       "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"email\"\":\"\"gean@grupleo.com\"\",\"\"password\"\":\"\"admin123\"\"}')",
       "Bash(node -e \":*)",
-      "Bash(cmd //c \"taskkill /F /PID 27708\")"
+      "Bash(cmd //c \"taskkill /F /PID 27708\")",
+      "Bash(npx shadcn@latest add select textarea badge separator --yes)"
     ]
   }
 }
