@@ -238,23 +238,29 @@ model OrdenServicio {
 }
 
 model Factura {
-  id                   String        @id @default(uuid())
-  ordenServicioId      String
-  ordenServicio        OrdenServicio @relation(fields: [ordenServicioId], references: [id])
+  id                   String         @id @default(uuid())
+  ordenServicioId      String?
+  ordenServicio        OrdenServicio? @relation(fields: [ordenServicioId], references: [id])
   clienteId            String
-  cliente              Cliente       @relation(fields: [clienteId], references: [id])
+  cliente              Cliente        @relation(fields: [clienteId], references: [id])
   serie                String
   numero               String
   tipo                 String
   fechaEmision         DateTime
-  montoNeto            Decimal       @default(0)
-  igv                  Decimal       @default(0)
-  total                Decimal       @default(0)
-  detraccionPorcentaje Decimal       @default(0)
-  detraccionMonto      Decimal       @default(0)
-  estadoPago           String        @default("PENDIENTE")
+  fechaVencimiento     DateTime?
+  moneda               String?
+  montoNeto            Decimal        @default(0)
+  igv                  Decimal        @default(0)
+  total                Decimal        @default(0)
+  detraccionPorcentaje Decimal        @default(0)
+  detraccionMonto      Decimal        @default(0)
+  estadoPago           String         @default("PENDIENTE")
   formaPago            String?
-  createdAt            DateTime      @default(now())
+  origenImportacion    String?
+  nombreArchivoOrigen  String?
+  rawPayload           Json?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
   guias                FacturaGuia[]
   pagos                Pago[]
 
@@ -268,6 +274,8 @@ model FacturaGuia {
   serieGuia  String
   numeroGuia String
   createdAt  DateTime @default(now())
+
+  @@unique([facturaId, serieGuia, numeroGuia])
 }
 
 model Pago {

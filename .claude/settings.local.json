@@ -22,7 +22,10 @@
       "Bash(findstr :3000)",
       "Bash(node -e \"require\\(''dotenv/config''\\); require\\(''./src/routes/servicios''\\); console.log\\(''servicios.js OK''\\)\")",
       "Bash(node -e \"require\\('./src/routes/guias.js'\\); console.log\\('OK'\\)\")",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(set PRISMA_MIGRATE_SKIP_INTERACTIVE=1)",
+      "Bash(node -e \"require\\('./src/routes/facturas'\\)\")",
+      "Bash(node -e \"require\\('./src/modules/facturas/parseXmlFactura'\\); require\\('./src/modules/facturas/parsePdfFactura'\\); require\\('./src/modules/facturas/buildFacturaChecklist'\\); require\\('./src/validators/facturas.schema'\\); console.log\\('OK'\\)\")"
     ]
   }
 }
