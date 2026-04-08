@@ -8,14 +8,17 @@ import { api } from "@/lib/api";
  * PlacaAutocomplete — input con sugerencias de placas desde la BD.
  *
  * Props:
- *   value            string          texto actual del input
- *   onChange         (text) => void  cuando el usuario escribe
+ *   value            string              texto actual del input
+ *   onChange         (text) => void      cuando el usuario escribe
  *   onSelect         (vehiculo) => void  cuando selecciona una sugerencia
  *   placeholder      string
  *   disabled         boolean
- *   soloPropio       boolean         filtra propietarioSubcontratadoId: null
- *   tipoUnidadFiltro string|null     filtra por tipoUnidad (ej. "PLATAFORMA")
- *   mustSelect       boolean         si true, el texto libre sin selección se marca como inválido
+ *   soloPropio       boolean             filtra propietarioSubcontratadoId: null
+ *   tipoUnidadFiltro string|null         filtra por tipoUnidad (ej. "PLATAFORMA")
+ *   mustSelect       boolean             si true, el texto libre sin selección se marca como inválido
+ *   isValidated      boolean             CONTROLADO por el padre: true cuando existe un vehiculoId válido
+ *                                        asociado al texto actual. Si true, el campo se muestra como
+ *                                        seleccionado (azul, check) y no se dispara búsqueda automática.
  *   className        string
  */
 export default function PlacaAutocomplete({
@@ -27,37 +30,52 @@ export default function PlacaAutocomplete({
   soloPropio = false,
   tipoUnidadFiltro = null,
   mustSelect = false,
+  isValidated = false,
   className,
 }) {
   const [sugerencias, setSugerencias]         = useState([]);
   const [showSugerencias, setShowSugerencias] = useState(false);
   const [loading, setLoading]                 = useState(false);
-  const [seleccionado, setSeleccionado]       = useState(false);
 
-  const dropdownRef   = useRef(null);
-  const debounceRef   = useRef(null);
-  // Ref que impide que el useEffect resetee seleccionado cuando el cambio
-  // de value vino de una selección (no de escritura manual).
-  const justSelected  = useRef(false);
+  const dropdownRef  = useRef(null);
+  const debounceRef  = useRef(null);
+  // Evita que el useEffect busque justo después de que el usuario selecciona una sugerencia.
+  // (onChange + onSelect se llaman juntos; el padre actualiza value e isValidated en el
+  //  mismo ciclo de render, pero el effect se ejecuta una sola vez y debe saltárselo).
+  const justSelected = useRef(false);
+  // Protege contra respuestas HTTP obsoletas (race condition con debounce).
+  const requestIdRef = useRef(0);
 
   // ── Búsqueda con debounce ────────────────────────────────────────────────────
   useEffect(() => {
     if (disabled) return;
 
-    // Si el cambio de value fue provocado por handleSelect, ignorar este ciclo.
+    // Selección recién hecha desde el dropdown: no buscar ni limpiar.
     if (justSelected.current) {
       justSelected.current = false;
       return;
     }
 
+    // El padre indica que el valor actual ya corresponde a un registro válido:
+    // no disparar búsqueda automática y limpiar cualquier sugerencia residual.
+    if (isValidated) {
+      clearTimeout(debounceRef.current);
+      setSugerencias([]);
+      setShowSugerencias(false);
+      return;
+    }
+
     clearTimeout(debounceRef.current);
-    setSeleccionado(false);
 
     if (!value || value.trim().length < 1) {
       setSugerencias([]);
       setShowSugerencias(false);
       return;
     }
+
+    // Incrementar antes del fetch: toda respuesta con ID distinto es obsoleta.
+    requestIdRef.current += 1;
+    const myRequestId = requestIdRef.current;
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
@@ -67,17 +85,19 @@ export default function PlacaAutocomplete({
         if (tipoUnidadFiltro) url += `&tipoUnidad=${encodeURIComponent(tipoUnidadFiltro)}`;
 
         const results = await api.get(url);
+        if (myRequestId !== requestIdRef.current) return; // respuesta obsoleta
         setSugerencias(Array.isArray(results) ? results : []);
         setShowSugerencias(Array.isArray(results) && results.length > 0);
       } catch {
+        if (myRequestId !== requestIdRef.current) return;
         setSugerencias([]);
       } finally {
-        setLoading(false);
+        if (myRequestId === requestIdRef.current) setLoading(false);
       }
     }, 280);
 
     return () => clearTimeout(debounceRef.current);
-  }, [value, disabled, soloPropio, tipoUnidadFiltro]);
+  }, [value, disabled, soloPropio, tipoUnidadFiltro, isValidated]);
 
   // ── Cerrar dropdown al hacer click fuera ────────────────────────────────────
   useEffect(() => {
@@ -92,23 +112,26 @@ export default function PlacaAutocomplete({
 
   // ── Seleccionar sugerencia ───────────────────────────────────────────────────
   function handleSelect(vehiculo) {
-    justSelected.current = true;   // evita que el useEffect pise seleccionado
+    // Marcar antes de llamar onChange/onSelect para que el effect no busque.
+    justSelected.current = true;
     clearTimeout(debounceRef.current);
-    onChange(vehiculo.placa);
-    setSeleccionado(true);
     setSugerencias([]);
     setShowSugerencias(false);
+    // onChange primero (el padre limpia vehiculoId en handlePlacaTextChange),
+    // luego onSelect (el padre vuelve a setear vehiculoId en selVehiculo).
+    // React 18 batchea ambas actualizaciones: el resultado final es vehiculoId = vehiculo.id.
+    onChange(vehiculo.placa);
     onSelect?.(vehiculo);
   }
 
   function handleChange(val) {
     onChange(val.toUpperCase());
-    // No hace falta setSeleccionado(false) aquí; el useEffect lo hace
-    // porque justSelected.current sigue en false cuando el usuario escribe.
+    // El padre limpiará vehiculoId → isValidated pasará a false → effect buscará.
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
-  const isInvalid = mustSelect && !!value.trim() && !loading && !seleccionado;
+  // isValidated viene del padre (fuente de verdad externa).
+  const isInvalid = mustSelect && !!value.trim() && !loading && !isValidated;
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -122,19 +145,20 @@ export default function PlacaAutocomplete({
           autoComplete="off"
           className={cn(
             "pr-9 font-mono tracking-wider transition-colors",
-            seleccionado && "border-blue-300 bg-blue-50/50 focus-visible:ring-blue-300",
-            isInvalid && "border-red-300 bg-red-50/40 focus-visible:ring-red-300",
+            isValidated && "border-blue-300 bg-blue-50/50 focus-visible:ring-blue-300",
+            isInvalid   && "border-red-300 bg-red-50/40 focus-visible:ring-red-300",
             className
           )}
         />
         <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-          ) : seleccionado ? (
+          ) : isValidated ? (
             <Check className="h-4 w-4 text-blue-500" strokeWidth={2.5} />
           ) : null}
         </div>
       </div>
+
       {isInvalid && (
         <p className="mt-1 text-xs text-red-500">
           Selecciona un vehículo registrado desde las sugerencias.

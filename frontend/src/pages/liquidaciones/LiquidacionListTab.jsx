@@ -18,8 +18,6 @@ const STATUS_TABS = [
   { key: "TODOS", label: "Todos" },
   { key: "PENDIENTE", label: "Pendiente" },
   { key: "LIQUIDADA", label: "Liquidada" },
-  { key: "OBSERVADA", label: "Observada" },
-  { key: "CANCELADO", label: "Cancelado" },
 ];
 
 function matchesMonth(liquidacion, monthValue) {
@@ -50,7 +48,7 @@ export default function LiquidacionListTab({
 
       if (favorFilter === "EMPRESA" && getSaldoFavorTag(liquidacion) !== "EMPRESA") return false;
       if (favorFilter === "CONDUCTOR" && getSaldoFavorTag(liquidacion) !== "CONDUCTOR") return false;
-      if (favorFilter === "PENDIENTES" && !["PENDIENTE", "OBSERVADA"].includes(liquidacion.status)) return false;
+      if (favorFilter === "PENDIENTES" && liquidacion.status !== "PENDIENTE") return false;
 
       if (search.trim()) {
         const query = search.toLowerCase();

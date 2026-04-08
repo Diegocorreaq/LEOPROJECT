@@ -11,14 +11,6 @@ export const LIQUIDACION_STATUS_CFG = {
     label: "Liquidada",
     cls: "border border-emerald-200 bg-emerald-50 text-emerald-700",
   },
-  CANCELADO: {
-    label: "Cancelado",
-    cls: "border border-slate-200 bg-slate-100 text-slate-700",
-  },
-  OBSERVADA: {
-    label: "Observada",
-    cls: "border border-red-200 bg-red-50 text-red-700",
-  },
 };
 
 export function formatCurrency(value) {

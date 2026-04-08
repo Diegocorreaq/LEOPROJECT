@@ -6,15 +6,12 @@ const moneySchema = z.preprocess(
   z.coerce.number().min(0, "El valor debe ser mayor o igual a 0"),
 );
 
-const optionalStringSchema = z.string().trim().max(2000).optional().nullable();
+const quantitySchema = z.preprocess(
+  (value) => (value === "" || value == null ? 0 : value),
+  z.coerce.number().min(0, "La cantidad debe ser mayor o igual a 0"),
+);
 
-const comprobanteSchema = z.object({
-  tipo: z.string({ required_error: "tipo es requerido" }).trim().min(1).max(80),
-  numero: z.string().trim().max(120).optional().nullable(),
-  descripcion: z.string().trim().max(500).optional().nullable(),
-  monto: moneySchema,
-  urlArchivo: z.string().trim().url("urlArchivo debe ser una URL valida").max(500).optional().nullable(),
-});
+const optionalStringSchema = z.string().trim().max(2000).optional().nullable();
 
 const createLiquidacionSchema = z.object({
   servicioId: z.string({ required_error: "servicioId es requerido" }).uuid("servicioId debe ser un UUID valido"),
@@ -22,11 +19,10 @@ const createLiquidacionSchema = z.object({
   viaticos: moneySchema,
   peajes: moneySchema,
   combustible: moneySchema,
-  galones: moneySchema,
+  galones: quantitySchema,
   otros: moneySchema,
   status: z.enum(LIQUIDACION_STATUS).default("PENDIENTE"),
   observaciones: optionalStringSchema,
-  comprobantes: z.array(comprobanteSchema).optional().default([]),
 }).strict();
 
 const updateLiquidacionSchema = z.object({
@@ -35,11 +31,10 @@ const updateLiquidacionSchema = z.object({
   viaticos: moneySchema,
   peajes: moneySchema,
   combustible: moneySchema,
-  galones: moneySchema,
+  galones: quantitySchema,
   otros: moneySchema,
   status: z.enum(LIQUIDACION_STATUS),
   observaciones: optionalStringSchema,
-  comprobantes: z.array(comprobanteSchema).optional().default([]),
 }).strict();
 
 const patchLiquidacionStatusSchema = z.object({
@@ -50,7 +45,6 @@ const patchLiquidacionStatusSchema = z.object({
 
 module.exports = {
   LIQUIDACION_STATUS,
-  comprobanteSchema,
   createLiquidacionSchema,
   patchLiquidacionStatusSchema,
   updateLiquidacionSchema,

@@ -107,9 +107,7 @@ export default function LiquidacionesPage() {
   }
 
   const totals = useMemo(() => {
-    const pendientes = liquidaciones.filter((liquidacion) =>
-      ["PENDIENTE", "OBSERVADA"].includes(liquidacion.status),
-    ).length;
+    const pendientes = liquidaciones.filter((liquidacion) => liquidacion.status === "PENDIENTE").length;
     const favorEmpresa = liquidaciones.filter(
       (liquidacion) => getSaldoFavorTag(liquidacion) === "EMPRESA",
     ).length;

@@ -429,6 +429,7 @@ export default function EditarServicioPage() {
                         placeholder="T3U-947"
                         soloPropio
                         mustSelect
+                        isValidated={!!form.vehiculoId}
                       />
                     </Field>
                     <Field label="Placa carreta">
@@ -462,6 +463,7 @@ export default function EditarServicioPage() {
                       placeholder="Buscar por nombre o documento..."
                       soloPropio
                       mustSelect
+                      isValidated={!!form.conductorId}
                     />
                     {form._conductor && (
                       <p className="mt-1.5 text-xs text-slate-500">

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import LiquidacionComprobantesEditor from "./LiquidacionComprobantesEditor";
 import ServicioLiquidacionPicker from "./ServicioLiquidacionPicker";
 import {
   computeLiquidacion,
@@ -11,6 +10,7 @@ import {
   getClienteReferencia,
   getConductorNombre,
   getRutaLabel,
+  LIQUIDACION_STATUS,
   LIQUIDACION_STATUS_CFG,
 } from "./liquidacion-helpers";
 
@@ -23,18 +23,7 @@ const EMPTY_FORM = {
   otros: "",
   status: "PENDIENTE",
   observaciones: "",
-  comprobantes: [],
 };
-
-function normalizeComprobantes(comprobantes = []) {
-  return comprobantes.map((comprobante) => ({
-    tipo: comprobante.tipo ?? "",
-    numero: comprobante.numero ?? "",
-    descripcion: comprobante.descripcion ?? "",
-    monto: comprobante.monto ?? "",
-    urlArchivo: comprobante.urlArchivo ?? "",
-  }));
-}
 
 function Section({ title, description, children }) {
   return (
@@ -91,6 +80,25 @@ function MoneyField({ label, value, onChange, disabled = false, name }) {
   );
 }
 
+function QuantityField({ label, value, onChange, disabled = false, name }) {
+  return (
+    <label className="space-y-2">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <input
+        name={name}
+        type="number"
+        min="0"
+        step="0.01"
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-50"
+        placeholder="0"
+      />
+    </label>
+  );
+}
+
 export default function LiquidacionFormTab({
   mode = "create",
   liquidacionId = "",
@@ -122,9 +130,8 @@ export default function LiquidacionFormTab({
             combustible: liquidacion.combustible ?? "",
             galones: liquidacion.galones ?? "",
             otros: liquidacion.otros ?? "",
-            status: liquidacion.status ?? "PENDIENTE",
+            status: LIQUIDACION_STATUS.includes(liquidacion.status) ? liquidacion.status : "PENDIENTE",
             observaciones: liquidacion.observaciones ?? "",
-            comprobantes: normalizeComprobantes(liquidacion.comprobantes),
           });
           setSelectedService(liquidacion.servicio);
           setError("");
@@ -191,31 +198,6 @@ export default function LiquidacionFormTab({
       return;
     }
 
-    const comprobantesPayload = [];
-    for (const comprobante of form.comprobantes) {
-      const hasContent =
-        comprobante.tipo?.trim() ||
-        comprobante.numero?.trim() ||
-        comprobante.descripcion?.trim() ||
-        `${comprobante.monto ?? ""}`.trim() ||
-        comprobante.urlArchivo?.trim();
-
-      if (!hasContent) continue;
-
-      if (!comprobante.tipo?.trim()) {
-        setError("Cada comprobante debe tener un tipo antes de guardar.");
-        return;
-      }
-
-      comprobantesPayload.push({
-        tipo: comprobante.tipo.trim(),
-        numero: comprobante.numero?.trim() || null,
-        descripcion: comprobante.descripcion?.trim() || null,
-        monto: comprobante.monto === "" ? 0 : Number(comprobante.monto || 0),
-        urlArchivo: comprobante.urlArchivo?.trim() || null,
-      });
-    }
-
     setSaving(true);
     setError("");
 
@@ -229,7 +211,6 @@ export default function LiquidacionFormTab({
       otros: form.otros === "" ? 0 : Number(form.otros || 0),
       status: form.status,
       observaciones: form.observaciones?.trim() || null,
-      comprobantes: comprobantesPayload,
     };
 
     try {
@@ -291,7 +272,7 @@ export default function LiquidacionFormTab({
           <ReadOnlyGrid servicio={selectedService} />
         </Section>
 
-        <Section title="Datos financieros" description="Ingresa los montos de la liquidacion. Los totales se calculan automaticamente.">
+        <Section title="Datos financieros" description="Ingresa los montos de la liquidacion. Galones es solo una cantidad de referencia y no suma al total de gastos.">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <MoneyField
               label="Monto entregado"
@@ -321,8 +302,8 @@ export default function LiquidacionFormTab({
               onChange={handleFieldChange}
               disabled={saving}
             />
-            <MoneyField
-              label="Galones"
+            <QuantityField
+              label="Galones ingresados"
               name="galones"
               value={form.galones}
               onChange={handleFieldChange}
@@ -377,14 +358,6 @@ export default function LiquidacionFormTab({
             <InfoCard label="Saldo" value={formatCurrency(computed.saldo)} />
             <InfoCard label="Detalle saldo" value={computed.detalleSaldo || "-"} />
           </div>
-        </Section>
-
-        <Section title="Comprobantes" description="Puedes registrar multiples comprobantes asociados a la liquidacion.">
-          <LiquidacionComprobantesEditor
-            value={form.comprobantes}
-            onChange={(comprobantes) => setForm((prev) => ({ ...prev, comprobantes }))}
-            disabled={saving}
-          />
         </Section>
 
         <div className="flex items-center justify-end gap-3">

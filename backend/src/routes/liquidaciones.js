@@ -51,9 +51,6 @@ const serviciosDisponiblesQuerySchema = z.object({
 }).strict();
 
 const liquidacionInclude = {
-  comprobantes: {
-    orderBy: { createdAt: "asc" },
-  },
   conductor: true,
   servicio: {
     include: {
@@ -122,11 +119,6 @@ function serializeLiquidacion(liquidacion) {
     otros: toNumber(liquidacion.otros),
     totalGastos: toNumber(liquidacion.totalGastos),
     saldo: toNumber(liquidacion.saldo),
-    comprobantesCount: liquidacion.comprobantes?.length ?? 0,
-    comprobantes: (liquidacion.comprobantes ?? []).map((comprobante) => ({
-      ...comprobante,
-      monto: toNumber(comprobante.monto),
-    })),
     conductor: liquidacion.conductor
       ? {
           ...liquidacion.conductor,
@@ -223,16 +215,6 @@ function buildLiquidacionData(body, servicio) {
     status: computed.status,
     observaciones: body.observaciones ?? null,
   };
-}
-
-function buildComprobantesCreate(comprobantes = []) {
-  return comprobantes.map((comprobante) => ({
-    tipo: comprobante.tipo,
-    numero: comprobante.numero ?? null,
-    descripcion: comprobante.descripcion ?? null,
-    monto: Number(comprobante.monto ?? 0),
-    urlArchivo: comprobante.urlArchivo ?? null,
-  }));
 }
 
 async function getLiquidacionDetalle(db, liquidacionId) {
@@ -346,7 +328,7 @@ router.get("/", async (req, res, next) => {
     if (servicioId) andConditions.push({ servicioId });
 
     if (pendientes) {
-      andConditions.push({ status: { in: ["PENDIENTE", "OBSERVADA"] } });
+      andConditions.push({ status: "PENDIENTE" });
     }
 
     if (favor === "EMPRESA") {
@@ -542,14 +524,7 @@ router.post("/", async (req, res, next) => {
       }
 
       const created = await tx.liquidacion.create({
-        data: {
-          ...buildLiquidacionData(body, servicio),
-          comprobantes: body.comprobantes?.length
-            ? {
-                create: buildComprobantesCreate(body.comprobantes),
-              }
-            : undefined,
-        },
+        data: buildLiquidacionData(body, servicio),
       });
 
       return getLiquidacionDetalle(tx, created.id);
@@ -610,18 +585,9 @@ router.put("/:id", async (req, res, next) => {
         throw forbidden;
       }
 
-      await tx.liquidacionComprobante.deleteMany({ where: { liquidacionId: existing.id } });
-
       await tx.liquidacion.update({
         where: { id: existing.id },
-        data: {
-          ...buildLiquidacionData(body, servicio),
-          comprobantes: body.comprobantes?.length
-            ? {
-                create: buildComprobantesCreate(body.comprobantes),
-              }
-            : undefined,
-        },
+        data: buildLiquidacionData(body, servicio),
       });
 
       return getLiquidacionDetalle(tx, existing.id);

@@ -3,10 +3,8 @@ import {
   AlertCircle,
   ArrowRightLeft,
   ExternalLink,
-  FileText,
   Loader2,
   Pencil,
-  Receipt,
   Trash2,
   X,
 } from "lucide-react";
@@ -23,6 +21,7 @@ import {
   getConductorNombre,
   getRutaLabel,
   getServicioReferencia,
+  LIQUIDACION_STATUS,
   LIQUIDACION_STATUS_CFG,
 } from "./liquidacion-helpers";
 
@@ -72,7 +71,7 @@ export default function LiquidacionDetailDrawer({
       .then((data) => {
         if (!active) return;
         setDetail(data);
-        setStatusValue(data.status);
+        setStatusValue(LIQUIDACION_STATUS.includes(data.status) ? data.status : "PENDIENTE");
       })
       .catch((err) => {
         if (active) {
@@ -105,7 +104,9 @@ export default function LiquidacionDetailDrawer({
       onUpdated?.(updated);
     } catch (err) {
       setError(err.message || "No se pudo actualizar el status.");
-      setStatusValue(detail?.status ?? "PENDIENTE");
+      setStatusValue(
+        detail?.status && LIQUIDACION_STATUS.includes(detail.status) ? detail.status : "PENDIENTE",
+      );
     } finally {
       setSavingStatus(false);
     }
@@ -164,7 +165,7 @@ export default function LiquidacionDetailDrawer({
                 Reasignar servicio
               </Button>
             ) : null}
-            {detail?.servicioId && (
+            {detail?.servicioId ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -173,7 +174,7 @@ export default function LiquidacionDetailDrawer({
                 <ExternalLink className="h-4 w-4" />
                 Abrir servicio
               </Button>
-            )}
+            ) : null}
             {isAdmin ? (
               <Button
                 size="sm"
@@ -230,16 +231,16 @@ export default function LiquidacionDetailDrawer({
 
               <Section label="Unidad y conductor">
                 <Row label="Placa" value={detail.servicio?.vehiculo?.placa ?? "-"} />
-                {detail.servicio?.vehiculo?.placaCarreta && (
+                {detail.servicio?.vehiculo?.placaCarreta ? (
                   <Row label="Carreta" value={detail.servicio.vehiculo.placaCarreta} />
-                )}
+                ) : null}
                 <Row label="Conductor" value={getConductorNombre(detail.servicio?.conductor)} />
-                {detail.servicio?.conductor?.nroDocumento && (
+                {detail.servicio?.conductor?.nroDocumento ? (
                   <Row label="Documento" value={detail.servicio.conductor.nroDocumento} />
-                )}
+                ) : null}
               </Section>
 
-              {(detail.servicio?.clientes ?? []).length > 0 && (
+              {(detail.servicio?.clientes ?? []).length > 0 ? (
                 <>
                   <hr />
                   <Section label="Clientes">
@@ -252,7 +253,7 @@ export default function LiquidacionDetailDrawer({
                     ))}
                   </Section>
                 </>
-              )}
+              ) : null}
 
               <hr />
 
@@ -282,55 +283,11 @@ export default function LiquidacionDetailDrawer({
                 <Row label="Viaticos" value={formatCurrency(detail.viaticos)} />
                 <Row label="Peajes" value={formatCurrency(detail.peajes)} />
                 <Row label="Combustible" value={formatCurrency(detail.combustible)} />
-                <Row label="Galones" value={detail.galones ?? 0} />
+                <Row label="Galones ingresados" value={detail.galones ?? 0} />
                 <Row label="Otros" value={formatCurrency(detail.otros)} />
                 <Row label="Total gastos" value={formatCurrency(detail.totalGastos)} />
                 <Row label="Saldo" value={formatCurrency(detail.saldo)} />
                 <Row label="Detalle saldo" value={detail.detalleSaldo || "-"} />
-              </Section>
-
-              <hr />
-
-              <Section label="Comprobantes">
-                {(detail.comprobantes ?? []).length > 0 ? (
-                  <div className="space-y-2">
-                    {detail.comprobantes.map((comprobante) => (
-                      <div
-                        key={comprobante.id}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-slate-800">
-                              {comprobante.tipo}
-                              {comprobante.numero ? ` · ${comprobante.numero}` : ""}
-                            </p>
-                            {comprobante.descripcion && (
-                              <p className="text-xs text-slate-500">{comprobante.descripcion}</p>
-                            )}
-                            {comprobante.urlArchivo && (
-                              <a
-                                href={comprobante.urlArchivo}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
-                              >
-                                <FileText className="h-3.5 w-3.5" />
-                                Ver archivo
-                              </a>
-                            )}
-                          </div>
-                          <span className="inline-flex items-center gap-1 text-sm font-semibold text-slate-700">
-                            <Receipt className="h-4 w-4 text-slate-400" />
-                            {formatCurrency(comprobante.monto)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-400">No hay comprobantes registrados.</p>
-                )}
               </Section>
 
               <hr />
@@ -353,7 +310,9 @@ export default function LiquidacionDetailDrawer({
                       </option>
                     ))}
                   </select>
-                  {savingStatus && <p className="text-xs text-slate-400">Actualizando status...</p>}
+                  {savingStatus ? (
+                    <p className="text-xs text-slate-400">Actualizando status...</p>
+                  ) : null}
                 </label>
                 <p className="text-sm text-slate-600">
                   {detail.observaciones || "Sin observaciones internas registradas."}
@@ -368,7 +327,7 @@ export default function LiquidacionDetailDrawer({
         <ConfirmModal
           open={deleteOpen}
           title="Eliminar liquidacion"
-          description="Esta accion eliminara la liquidacion y sus comprobantes relacionados."
+          description="Esta accion eliminara la liquidacion registrada para este servicio."
           warning="No se puede deshacer."
           confirmLabel="Eliminar liquidacion"
           loadingLabel="Eliminando..."

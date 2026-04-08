@@ -4,6 +4,22 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 
+/**
+ * ConductorAutocomplete — input con sugerencias de conductores desde la BD.
+ *
+ * Props:
+ *   value         string              texto actual del input
+ *   onChange      (text) => void      cuando el usuario escribe
+ *   onSelect      (conductor) => void cuando selecciona una sugerencia
+ *   placeholder   string
+ *   disabled      boolean
+ *   soloPropio    boolean             filtra conductores propios
+ *   mustSelect    boolean             si true, el texto libre sin selección se marca como inválido
+ *   isValidated   boolean             CONTROLADO por el padre: true cuando existe un conductorId válido
+ *                                     asociado al texto actual. Si true, el campo se muestra como
+ *                                     seleccionado (azul, check) y no se dispara búsqueda automática.
+ *   className     string
+ */
 export default function ConductorAutocomplete({
   value = "",
   onChange,
@@ -12,33 +28,50 @@ export default function ConductorAutocomplete({
   disabled = false,
   soloPropio = false,
   mustSelect = false,
+  isValidated = false,
   className,
 }) {
   const [sugerencias, setSugerencias] = useState([]);
   const [showSugerencias, setShowSugerencias] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [seleccionado, setSeleccionado] = useState(false);
 
-  const dropdownRef = useRef(null);
-  const debounceRef = useRef(null);
+  const dropdownRef  = useRef(null);
+  const debounceRef  = useRef(null);
+  // Evita que el useEffect busque justo después de que el usuario selecciona una sugerencia.
   const justSelected = useRef(false);
+  // Protege contra respuestas HTTP obsoletas (race condition con debounce).
+  const requestIdRef = useRef(0);
 
+  // ── Búsqueda con debounce ────────────────────────────────────────────────────
   useEffect(() => {
     if (disabled) return undefined;
 
+    // Selección recién hecha desde el dropdown: no buscar ni limpiar.
     if (justSelected.current) {
       justSelected.current = false;
       return undefined;
     }
 
+    // El padre indica que el valor actual ya corresponde a un registro válido:
+    // no disparar búsqueda automática y limpiar cualquier sugerencia residual.
+    if (isValidated) {
+      clearTimeout(debounceRef.current);
+      setSugerencias([]);
+      setShowSugerencias(false);
+      return undefined;
+    }
+
     clearTimeout(debounceRef.current);
-    setSeleccionado(false);
 
     if (!value || value.trim().length < 1) {
       setSugerencias([]);
       setShowSugerencias(false);
       return undefined;
     }
+
+    // Incrementar antes del fetch: toda respuesta con ID distinto es obsoleta.
+    requestIdRef.current += 1;
+    const myRequestId = requestIdRef.current;
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
@@ -47,48 +80,57 @@ export default function ConductorAutocomplete({
         if (soloPropio) url += "&soloPropio=true";
 
         const results = await api.get(url);
+        if (myRequestId !== requestIdRef.current) return; // respuesta obsoleta
         setSugerencias(Array.isArray(results) ? results : []);
         setShowSugerencias(Array.isArray(results) && results.length > 0);
       } catch {
+        if (myRequestId !== requestIdRef.current) return;
         setSugerencias([]);
       } finally {
-        setLoading(false);
+        if (myRequestId === requestIdRef.current) setLoading(false);
       }
     }, 280);
 
     return () => clearTimeout(debounceRef.current);
-  }, [value, disabled, soloPropio]);
+  }, [value, disabled, soloPropio, isValidated]);
 
+  // ── Cerrar dropdown al hacer click fuera ────────────────────────────────────
   useEffect(() => {
     function onClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowSugerencias(false);
       }
     }
-
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
+  // ── Seleccionar sugerencia ───────────────────────────────────────────────────
   function handleSelect(conductor) {
     const nombreCompleto = [conductor.nombre, conductor.apPaterno, conductor.apMaterno]
       .filter(Boolean)
       .join(" ");
 
+    // Marcar antes de llamar onChange/onSelect para que el effect no busque.
     justSelected.current = true;
     clearTimeout(debounceRef.current);
-    onChange(nombreCompleto);
-    setSeleccionado(true);
     setSugerencias([]);
     setShowSugerencias(false);
+    // onChange primero (el padre limpia conductorId en handleConductorTextChange),
+    // luego onSelect (el padre vuelve a setear conductorId en selConductor).
+    // React 18 batchea ambas actualizaciones: el resultado final es conductorId = conductor.id.
+    onChange(nombreCompleto);
     onSelect?.(conductor);
   }
 
   function handleChange(nextValue) {
     onChange(nextValue);
+    // El padre limpiará conductorId → isValidated pasará a false → effect buscará.
   }
 
-  const isInvalid = mustSelect && !!value.trim() && !loading && !seleccionado;
+  // ── Render ───────────────────────────────────────────────────────────────────
+  // isValidated viene del padre (fuente de verdad externa).
+  const isInvalid = mustSelect && !!value.trim() && !loading && !isValidated;
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -102,15 +144,15 @@ export default function ConductorAutocomplete({
           autoComplete="off"
           className={cn(
             "pr-9 transition-colors",
-            seleccionado && "border-blue-300 bg-blue-50/50 focus-visible:ring-blue-300",
-            isInvalid && "border-red-300 bg-red-50/40 focus-visible:ring-red-300",
+            isValidated && "border-blue-300 bg-blue-50/50 focus-visible:ring-blue-300",
+            isInvalid   && "border-red-300 bg-red-50/40 focus-visible:ring-red-300",
             className,
           )}
         />
         <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-          ) : seleccionado ? (
+          ) : isValidated ? (
             <Check className="h-4 w-4 text-blue-500" strokeWidth={2.5} />
           ) : null}
         </div>
