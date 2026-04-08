@@ -16,9 +16,9 @@ function formatDate(value) {
 
 function formatCurrency(value) {
   const amount = Number(value || 0);
-  return new Intl.NumberFormat("es-CO", {
+  return new Intl.NumberFormat("es-PE", {
     style: "currency",
-    currency: "COP",
+    currency: "PEN",
     maximumFractionDigits: 2,
   }).format(amount);
 }
@@ -174,7 +174,12 @@ export default function ConductorDetallePage() {
             {conductor.liquidacionesRecientes?.length ? (
               <div className="space-y-3">
                 {conductor.liquidacionesRecientes.map((liquidacion) => (
-                  <div key={liquidacion.id} className="rounded-lg border border-slate-200 px-4 py-3">
+                  <button
+                    key={liquidacion.id}
+                    type="button"
+                    onClick={() => navigate(`/liquidaciones?liquidacionId=${liquidacion.id}`)}
+                    className="w-full rounded-lg border border-slate-200 px-4 py-3 text-left transition-colors hover:bg-slate-50"
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-medium text-slate-900">{liquidacion.status}</p>
                       <span className="text-sm text-slate-600">{formatCurrency(liquidacion.saldo)}</span>
@@ -182,7 +187,7 @@ export default function ConductorDetallePage() {
                     <p className="mt-1 text-sm text-slate-500">
                       {formatDate(liquidacion.createdAt)} · Gastos {formatCurrency(liquidacion.totalGastos)}
                     </p>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : (

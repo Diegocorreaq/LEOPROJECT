@@ -200,6 +200,7 @@ model Liquidacion {
   saldo          Decimal                  @default(0)
   detalleSaldo   String?
   status         String                   @default("PENDIENTE")
+  observaciones  String?
   createdAt      DateTime                 @default(now())
   comprobantes   LiquidacionComprobante[]
 }
