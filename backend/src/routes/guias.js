@@ -15,17 +15,28 @@
 
 const express = require("express");
 const multer = require("multer");
+const { z } = require("zod");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
-const { requireOperaciones } = require("../middleware/rbac");
-const logger = require("../lib/logger");
-const { validate } = require("../lib/validate");
+const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
+const { recordAuditEvent } = require("../lib/audit");
+const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
+const { validate, validateRequest } = require("../lib/validate");
 const {
+  ESTADOS_GUIA,
   vincularGuiaSchema,
   patchEstadoGuiaSchema,
   patchObservacionesGuiaSchema,
   patchGuiaSchema,
 } = require("../validators/guias.schema");
+const {
+  booleanQueryField,
+  enumQueryField,
+  idParamSchema,
+  paginationQuerySchema,
+  stringQueryField,
+  uuidQueryField,
+} = require("../validators/common.schema");
 const { resolveImportFile } = require("../modules/guias/resolveImportFile");
 const { parseXmlGuia } = require("../modules/guias/parseXmlGuia");
 const { parsePdfGuia } = require("../modules/guias/parsePdfGuia");
@@ -35,6 +46,13 @@ const { buildGuiaChecklist } = require("../modules/guias/buildGuiaChecklist");
 const router = express.Router();
 router.use(authMiddleware);
 router.use(requireOperaciones);
+
+const guiaListQuerySchema = paginationQuerySchema.extend({
+  estado: enumQueryField(ESTADOS_GUIA, "estado"),
+  servicioId: uuidQueryField("servicioId"),
+  sinVincular: booleanQueryField("sinVincular"),
+  texto: stringQueryField("texto", { max: 120 }),
+}).strict();
 
 // ── Multer: memoria, máx 15 MB, solo XML/ZIP/PDF ─────────────────────────────
 const upload = multer({
@@ -63,13 +81,17 @@ const guiaInclude = {
 // ── GET /api/guias ─────────────────────────────────────────────────────────────
 router.get("/", async (req, res, next) => {
   try {
-    const { estado, servicioId, sinVincular, texto } = req.query;
+    const validated = validateRequest({ query: guiaListQuerySchema }, req, res);
+    if (!validated) return;
+
+    const { estado, servicioId, sinVincular, texto } = validated.query;
+    const pagination = resolvePagination(validated.query, { defaultLimit: 100, maxLimit: 100 });
 
     const where = {};
 
     if (estado) where.estado = estado;
     if (servicioId) where.servicioId = servicioId;
-    if (sinVincular === "true") where.servicioId = null;
+    if (sinVincular) where.servicioId = null;
 
     if (texto) {
       const q = texto.trim();
@@ -88,39 +110,45 @@ router.get("/", async (req, res, next) => {
       ];
     }
 
-    const guias = await prisma.guiaRemision.findMany({
-      where,
-      select: {
-        id: true,
-        serie: true,
-        numero: true,
-        fechaEmision: true,
-        estado: true,
-        servicioId: true,
-        placaPrincipal: true,
-        placaSecundaria: true,
-        puntoDeSalida: true,
-        puntoDeLlegada: true,
-        remitenteNombre: true,
-        destinatarioNombre: true,
-        createdAt: true,
-        servicio: {
-          select: {
-            id: true,
-            origen: true,
-            destino: true,
-            vehiculo: { select: { placa: true } },
+    const [total, guias] = await Promise.all([
+      prisma.guiaRemision.count({ where }),
+      prisma.guiaRemision.findMany({
+        where,
+        select: {
+          id: true,
+          serie: true,
+          numero: true,
+          fechaEmision: true,
+          estado: true,
+          servicioId: true,
+          placaPrincipal: true,
+          placaSecundaria: true,
+          puntoDeSalida: true,
+          puntoDeLlegada: true,
+          remitenteNombre: true,
+          destinatarioNombre: true,
+          createdAt: true,
+          servicio: {
+            select: {
+              id: true,
+              origen: true,
+              destino: true,
+              vehiculo: { select: { placa: true } },
+            },
           },
         },
-      },
-      orderBy: [{ fechaEmision: "desc" }, { createdAt: "desc" }],
-    });
+        orderBy: [{ fechaEmision: "desc" }, { createdAt: "desc" }],
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
 
     const result = guias.map((g) => ({
       ...g,
       numeroCompleto: `${g.serie}-${g.numero}`,
     }));
 
+    applyPaginationHeaders(res, { ...pagination, total });
     res.json(result);
   } catch (err) {
     next(err);
@@ -130,8 +158,11 @@ router.get("/", async (req, res, next) => {
 // ── GET /api/guias/:id ─────────────────────────────────────────────────────────
 router.get("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const guia = await prisma.guiaRemision.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: guiaInclude,
     });
     if (!guia) return res.status(404).json({ error: "Guía no encontrada." });
@@ -270,12 +301,19 @@ router.post("/importar", upload.single("file"), async (req, res, next) => {
       return created;
     });
 
-    logger.info("Guía importada", {
+    req.log.info("Guía importada", {
       guiaId: guia.id,
       serie,
       numero,
       sourceType: resolved.sourceType,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "GuiaRemision",
+      entityId: guia.id,
+      action: "import",
+      req,
+      metadata: { serie, numero, sourceType: resolved.sourceType },
     });
 
     // 7. Construir checklist
@@ -299,16 +337,19 @@ router.post("/importar", upload.single("file"), async (req, res, next) => {
 // ── PATCH /api/guias/:id/vincular ──────────────────────────────────────────────
 router.patch("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(patchGuiaSchema, req.body, res);
     if (!body) return;
 
     const guia = await prisma.guiaRemision.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
     });
     if (!guia) return res.status(404).json({ error: "Guía no encontrada." });
 
     const updated = await prisma.guiaRemision.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: {
         ...(body.estado !== undefined && { estado: body.estado }),
         ...(body.observaciones !== undefined && { observaciones: body.observaciones }),
@@ -319,14 +360,21 @@ router.patch("/:id", async (req, res, next) => {
       include: guiaInclude,
     });
 
-    logger.info("Guía actualizada", {
-      guiaId: req.params.id,
+    req.log.info("Guía actualizada", {
+      guiaId: validated.params.id,
       usuarioId: req.user.id,
       cambios: {
         ...(body.estado !== undefined && { estado: body.estado }),
         ...(body.observaciones !== undefined && { observaciones: true }),
         ...(body.fechaRecepcion !== undefined && { fechaRecepcion: body.fechaRecepcion }),
       },
+    });
+    await recordAuditEvent({
+      entityType: "GuiaRemision",
+      entityId: updated.id,
+      action: "update",
+      req,
+      metadata: { campos: Object.keys(body) },
     });
 
     res.json({
@@ -342,11 +390,14 @@ router.patch("/:id", async (req, res, next) => {
 // PATCH /api/guias/:id/vincular
 router.patch("/:id/vincular", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(vincularGuiaSchema, req.body, res);
     if (!body) return;
 
     const guia = await prisma.guiaRemision.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
     });
     if (!guia) return res.status(404).json({ error: "Guía no encontrada." });
 
@@ -356,7 +407,7 @@ router.patch("/:id/vincular", async (req, res, next) => {
     if (!servicio) return res.status(404).json({ error: "Servicio no encontrado." });
 
     const updated = await prisma.guiaRemision.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: {
         servicioId: body.servicioId,
         ...(body.observaciones !== undefined && {
@@ -366,10 +417,17 @@ router.patch("/:id/vincular", async (req, res, next) => {
       include: guiaInclude,
     });
 
-    logger.info("Guía vinculada a servicio", {
-      guiaId: req.params.id,
+    req.log.info("Guía vinculada a servicio", {
+      guiaId: validated.params.id,
       servicioId: body.servicioId,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "GuiaRemision",
+      entityId: updated.id,
+      action: "link_service",
+      req,
+      metadata: { servicioId: body.servicioId },
     });
 
     res.json({
@@ -384,10 +442,13 @@ router.patch("/:id/vincular", async (req, res, next) => {
 
 // ── PATCH /api/guias/:id/estado ────────────────────────────────────────────────
 // PATCH /api/guias/:id/desvincular
-router.patch("/:id/desvincular", async (req, res, next) => {
+router.patch("/:id/desvincular", requireAdmin, async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const guia = await prisma.guiaRemision.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: guiaInclude,
     });
     if (!guia) return res.status(404).json({ error: "Guía no encontrada." });
@@ -401,15 +462,22 @@ router.patch("/:id/desvincular", async (req, res, next) => {
     }
 
     const updated = await prisma.guiaRemision.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: { servicioId: null },
       include: guiaInclude,
     });
 
-    logger.info("Guía desvinculada de servicio", {
-      guiaId: req.params.id,
+    req.log.info("Guía desvinculada de servicio", {
+      guiaId: validated.params.id,
       servicioIdAnterior: guia.servicioId,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "GuiaRemision",
+      entityId: updated.id,
+      action: "unlink_service",
+      req,
+      metadata: { servicioIdAnterior: guia.servicioId },
     });
 
     res.json({
@@ -425,25 +493,35 @@ router.patch("/:id/desvincular", async (req, res, next) => {
 // PATCH /api/guias/:id/estado
 router.patch("/:id/estado", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(patchEstadoGuiaSchema, req.body, res);
     if (!body) return;
 
     const guia = await prisma.guiaRemision.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
     });
     if (!guia) return res.status(404).json({ error: "Guía no encontrada." });
 
     const updated = await prisma.guiaRemision.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: { estado: body.estado },
       include: guiaInclude,
     });
 
-    logger.info("Estado de guía actualizado", {
-      guiaId: req.params.id,
+    req.log.info("Estado de guía actualizado", {
+      guiaId: validated.params.id,
       estadoAnterior: guia.estado,
       estadoNuevo: body.estado,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "GuiaRemision",
+      entityId: updated.id,
+      action: "status_change",
+      req,
+      metadata: { estadoAnterior: guia.estado, estadoNuevo: body.estado },
     });
 
     res.json({ ...updated, numeroCompleto: `${updated.serie}-${updated.numero}` });
@@ -455,17 +533,28 @@ router.patch("/:id/estado", async (req, res, next) => {
 // ── PATCH /api/guias/:id/observaciones ────────────────────────────────────────
 router.patch("/:id/observaciones", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(patchObservacionesGuiaSchema, req.body, res);
     if (!body) return;
 
     const guia = await prisma.guiaRemision.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
     });
     if (!guia) return res.status(404).json({ error: "Guía no encontrada." });
 
     const updated = await prisma.guiaRemision.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: { observaciones: body.observaciones },
+    });
+
+    await recordAuditEvent({
+      entityType: "GuiaRemision",
+      entityId: updated.id,
+      action: "update_notes",
+      req,
+      metadata: { observaciones: true },
     });
 
     res.json({ id: updated.id, observaciones: updated.observaciones });
@@ -476,38 +565,48 @@ router.patch("/:id/observaciones", async (req, res, next) => {
 
 // ── GET /api/guias/:id/sugerencias-servicio ────────────────────────────────────
 // DELETE /api/guias/:id
-router.delete("/:id", async (req, res, next) => {
+router.delete("/:id", requireAdmin, async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const guia = await prisma.guiaRemision.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       select: { id: true, serie: true, numero: true },
     });
     if (!guia) return res.status(404).json({ error: "Guía no encontrada." });
 
     await prisma.$transaction(async (tx) => {
       await tx.guiaBien.deleteMany({
-        where: { guiaRemisionId: req.params.id },
+        where: { guiaRemisionId: validated.params.id },
       });
 
       await tx.guiaDocRelacionado.deleteMany({
-        where: { guiaRemisionId: req.params.id },
+        where: { guiaRemisionId: validated.params.id },
       });
 
       await tx.guiaRemision.delete({
-        where: { id: req.params.id },
+        where: { id: validated.params.id },
       });
     });
 
-    logger.info("Guía eliminada", {
-      guiaId: req.params.id,
+    req.log.info("Guía eliminada", {
+      guiaId: validated.params.id,
       serie: guia.serie,
       numero: guia.numero,
       usuarioId: req.user.id,
     });
+    await recordAuditEvent({
+      entityType: "GuiaRemision",
+      entityId: guia.id,
+      action: "delete",
+      req,
+      metadata: { serie: guia.serie, numero: guia.numero },
+    });
 
     res.json({
       ok: true,
-      id: req.params.id,
+      id: validated.params.id,
       message: "La guía fue eliminada correctamente",
     });
   } catch (err) {
@@ -518,8 +617,11 @@ router.delete("/:id", async (req, res, next) => {
 // GET /api/guias/:id/sugerencias-servicio
 router.get("/:id/sugerencias-servicio", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const guia = await prisma.guiaRemision.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
     });
     if (!guia) return res.status(404).json({ error: "Guía no encontrada." });
 

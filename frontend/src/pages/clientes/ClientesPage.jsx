@@ -4,9 +4,11 @@ import { Eye, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import ConfirmModal from "@/components/ui/confirm-modal";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
 export default function ClientesPage() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -69,10 +71,10 @@ export default function ClientesPage() {
     try {
       await api.delete(`/clientes/${clienteToDelete.id}`);
       setClientes((current) => current.filter((item) => item.id !== clienteToDelete.id));
-      setFeedback("Cliente eliminado correctamente.");
+      setFeedback("Cliente desactivado correctamente.");
       setClienteToDelete(null);
     } catch (err) {
-      setDeleteError(err.message || "No se pudo eliminar el cliente.");
+      setDeleteError(err.message || "No se pudo desactivar el cliente.");
     } finally {
       setDeletingId("");
     }
@@ -100,7 +102,12 @@ export default function ClientesPage() {
       <div className="flex items-center gap-3 border-b px-8 py-3">
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por razon social, RUC o contacto" className="pl-9" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por razon social, RUC o contacto"
+            className="pl-9"
+          />
         </div>
         {search && (
           <button onClick={() => setSearch("")} className="text-sm font-medium text-slate-500 hover:text-slate-700">
@@ -157,12 +164,14 @@ export default function ClientesPage() {
                       <div className="flex items-center justify-end gap-2">
                         <IconAction label="Ver" onClick={() => navigate(`/clientes/${cliente.id}`)} icon={<Eye className="h-4 w-4" />} />
                         <IconAction label="Editar" onClick={() => navigate(`/clientes/${cliente.id}/editar`)} icon={<Pencil className="h-4 w-4" />} />
-                        <IconAction
-                          label={deletingId === cliente.id ? "Eliminando..." : "Eliminar"}
-                          onClick={() => handleDeleteClick(cliente)}
-                          disabled={deletingId === cliente.id}
-                          icon={<Trash2 className="h-4 w-4" />}
-                        />
+                        {user?.rol === "ADMIN" && (
+                          <IconAction
+                            label={deletingId === cliente.id ? "Desactivando..." : "Desactivar"}
+                            onClick={() => handleDeleteClick(cliente)}
+                            disabled={deletingId === cliente.id}
+                            icon={<Trash2 className="h-4 w-4" />}
+                          />
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -175,10 +184,10 @@ export default function ClientesPage() {
 
       <ConfirmModal
         open={Boolean(clienteToDelete)}
-        title="Eliminar cliente"
-        description={clienteToDelete ? `¿Seguro que deseas eliminar al cliente "${clienteToDelete.razonSocial}"?` : ""}
-        warning="Esta accion no se puede deshacer."
-        confirmLabel="Eliminar cliente"
+        title="Desactivar cliente"
+        description={clienteToDelete ? `Seguro que deseas desactivar al cliente "${clienteToDelete.razonSocial}"?` : ""}
+        warning="El cliente dejara de estar disponible para nuevas operaciones, pero se conservara su historial."
+        confirmLabel="Desactivar cliente"
         loading={deletingId === clienteToDelete?.id}
         error={deleteError}
         onClose={handleCloseDeleteModal}

@@ -1,28 +1,58 @@
-/**
- * servicios.js — CRUD de servicios de transporte
- *
- * Cambios de seguridad aplicados:
- *  - Validación Zod en POST y PATCH
- *  - Transacciones Prisma en POST (subcontratado) y PUT (actualización de clientes)
- *  - RBAC: requireOperaciones en todas las rutas
- *  - Logging de auditoría en creación y cambio de estado
- */
-
 const express = require("express");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireOperaciones } = require("../middleware/rbac");
-const logger = require("../lib/logger");
-const { validate } = require("../lib/validate");
+const { recordAuditEvent } = require("../lib/audit");
+const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
+const { validate, validateRequest } = require("../lib/validate");
 const {
   createServicioSchema,
-  updateServicioSchema,
+  listServiciosQuerySchema,
   patchEstadoSchema,
+  servicioIdParamSchema,
+  updateServicioSchema,
 } = require("../validators/servicios.schema");
 
 const router = express.Router();
 router.use(authMiddleware);
 router.use(requireOperaciones);
+
+const servicioDetailInclude = {
+  vehiculo: { include: { propietarioSubcontratado: true } },
+  conductor: { include: { propietarioSubcontratado: true } },
+  clientes: { include: { cliente: true } },
+  guias: true,
+  liquidacion: true,
+  orden: true,
+};
+
+const servicioListInclude = {
+  vehiculo: { select: { id: true, placa: true, placaCarreta: true, tipo: true, tipoUnidad: true } },
+  conductor: { select: { id: true, nombre: true, apPaterno: true, apMaterno: true, nroDocumento: true } },
+  clientes: { include: { cliente: true } },
+  guias: { select: { id: true } },
+  liquidacion: { select: { id: true, status: true } },
+  orden: { select: { id: true, rutaTarifaId: true } },
+};
+
+function addServiceCodes(servicios) {
+  const counters = {};
+
+  servicios.forEach((servicio) => {
+    const date = new Date(servicio.createdAt);
+    const yy = String(date.getUTCFullYear()).slice(2);
+    const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const key = `${yy}${mm}`;
+    counters[key] = (counters[key] || 0) + 1;
+    servicio.codigo = `SVC-${key}-${String(counters[key]).padStart(3, "0")}`;
+  });
+
+  return servicios;
+}
+
+function getTipoContrato(servicio) {
+  return servicio?.vehiculo?.tipo === "SUBCONTRATADO" ? "SUBCONTRATADO" : "PROPIO";
+}
 
 async function validarRecursosPropiosActivos(db, { vehiculoId, conductorId }) {
   const [vehiculo, conductor] = await Promise.all([
@@ -55,195 +85,265 @@ async function validarRecursosPropiosActivos(db, { vehiculoId, conductorId }) {
   return null;
 }
 
-// Relaciones estándar en queries
-const servicioInclude = {
-  vehiculo:  { include: { propietarioSubcontratado: true } },
-  conductor: { include: { propietarioSubcontratado: true } },
-  clientes:  { include: { cliente: true } },
-  guias:        true,
-  liquidacion:  true,
-  orden:        true,
-};
+async function upsertPropietario(db, propietario) {
+  if (!propietario) return null;
 
-// ── GET /api/servicios ─────────────────────────────────────────────────────
+  return db.propietarioSubcontratado.upsert({
+    where: { ruc: propietario.ruc },
+    update: {
+      razonSocial: propietario.razonSocial,
+      contacto: propietario.contacto ?? null,
+      telefono: propietario.telefono ?? null,
+    },
+    create: {
+      razonSocial: propietario.razonSocial,
+      ruc: propietario.ruc,
+      contacto: propietario.contacto ?? null,
+      telefono: propietario.telefono ?? null,
+    },
+  });
+}
+
+async function resolveSubcontratadoResources(db, subcontratado) {
+  const { empresa, vehiculo: vehiculoInput, conductor: conductorInput } = subcontratado;
+  const propietario = await upsertPropietario(db, empresa);
+
+  let vehiculo = await db.vehiculo.findUnique({ where: { placa: vehiculoInput.placa } });
+  if (!vehiculo) {
+    vehiculo = await db.vehiculo.create({
+      data: {
+        placa: vehiculoInput.placa,
+        placaCarreta: vehiculoInput.placaCarreta ?? null,
+        tipoUnidad: vehiculoInput.tipoUnidad ?? "CAMION",
+        tipo: "SUBCONTRATADO",
+        propietarioSubcontratadoId: propietario.id,
+      },
+    });
+  }
+
+  let conductor = await db.conductor.findFirst({
+    where: { nroDocumento: conductorInput.nroDocumento },
+  });
+  if (!conductor) {
+    conductor = await db.conductor.create({
+      data: {
+        nombre: conductorInput.nombre,
+        apPaterno: conductorInput.apPaterno,
+        apMaterno: conductorInput.apMaterno ?? null,
+        tipoDocumento: conductorInput.tipoDocumento ?? "DNI",
+        nroDocumento: conductorInput.nroDocumento,
+        licencia: conductorInput.licencia ?? null,
+        tipo: "SUBCONTRATADO",
+        propietarioSubcontratadoId: propietario.id,
+      },
+    });
+  }
+
+  return {
+    vehiculoId: vehiculo.id,
+    conductorId: conductor.id,
+  };
+}
+
+async function resolveClienteIds(db, payload) {
+  if (Array.isArray(payload.clienteIds)) {
+    const uniqueIds = Array.from(new Set(payload.clienteIds));
+
+    const clientes = await db.cliente.findMany({
+      where: {
+        id: { in: uniqueIds },
+        activo: true,
+      },
+      select: { id: true },
+    });
+
+    if (clientes.length !== uniqueIds.length) {
+      const error = new Error("Todos los clientes vinculados deben existir y estar activos.");
+      error.status = 409;
+      throw error;
+    }
+
+    return uniqueIds;
+  }
+
+  if (Array.isArray(payload.clientes)) {
+    const ids = [];
+
+    for (const clienteInput of payload.clientes) {
+      const existing = await db.cliente.findUnique({
+        where: { ruc: clienteInput.ruc },
+        select: { id: true, activo: true },
+      });
+
+      if (existing) {
+        if (!existing.activo) {
+          const error = new Error(`El cliente con RUC ${clienteInput.ruc} existe pero esta inactivo.`);
+          error.status = 409;
+          throw error;
+        }
+
+        ids.push(existing.id);
+        continue;
+      }
+
+      const created = await db.cliente.create({
+        data: {
+          razonSocial: clienteInput.razonSocial,
+          ruc: clienteInput.ruc,
+          email: clienteInput.email ?? null,
+          telefono: clienteInput.telefono ?? null,
+          direccion: clienteInput.direccion ?? null,
+          activo: true,
+        },
+        select: { id: true },
+      });
+
+      ids.push(created.id);
+    }
+
+    return Array.from(new Set(ids));
+  }
+
+  return [];
+}
+
+function buildServicioWhere(query) {
+  const where = {};
+  const and = [];
+
+  if (query.estado) {
+    and.push({ estado: query.estado });
+  }
+
+  if (query.tipoContrato === "PROPIO") {
+    and.push({ vehiculo: { is: { tipo: "PROPIO" } } });
+  } else if (query.tipoContrato === "SUBCONTRATADO") {
+    and.push({ vehiculo: { is: { tipo: "SUBCONTRATADO" } } });
+  }
+
+  if (query.conObservaciones) {
+    and.push({ observaciones: { not: null } });
+  }
+
+  if (query.texto) {
+    and.push({
+      OR: [
+        { origen: { contains: query.texto, mode: "insensitive" } },
+        { destino: { contains: query.texto, mode: "insensitive" } },
+        { vehiculo: { is: { placa: { contains: query.texto, mode: "insensitive" } } } },
+        { clientes: { some: { cliente: { razonSocial: { contains: query.texto, mode: "insensitive" } } } } },
+      ],
+    });
+  }
+
+  if (and.length > 0) {
+    where.AND = and;
+  }
+
+  return where;
+}
+
 router.get("/", async (req, res, next) => {
   try {
-    const servicios = await prisma.servicio.findMany({
-      include: servicioInclude,
-      orderBy: { createdAt: "asc" },
-    });
+    const validated = validateRequest({ query: listServiciosQuerySchema }, req, res);
+    if (!validated) return;
 
-    // Generar código SVC-YYMM-NNN estable por mes
-    const counters = {};
-    servicios.forEach((s) => {
-      const d = new Date(s.createdAt);
-      const yy = String(d.getUTCFullYear()).slice(2);
-      const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-      const key = `${yy}${mm}`;
-      counters[key] = (counters[key] || 0) + 1;
-      s.codigo = `SVC-${key}-${String(counters[key]).padStart(3, "0")}`;
-    });
+    const { query } = validated;
+    const pagination = resolvePagination(query, { defaultLimit: 100, maxLimit: 100 });
+    const where = buildServicioWhere(query);
 
-    servicios.sort((a, b) => new Date(b.fechaServicio) - new Date(a.fechaServicio));
-    res.json(servicios);
+    const [total, servicios] = await Promise.all([
+      prisma.servicio.count({ where }),
+      prisma.servicio.findMany({
+        where,
+        include: servicioListInclude,
+        orderBy: [{ fechaServicio: "desc" }, { createdAt: "desc" }],
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    applyPaginationHeaders(res, { ...pagination, total });
+    res.json(addServiceCodes(servicios));
   } catch (err) {
     next(err);
   }
 });
 
-// ── GET /api/servicios/:id ─────────────────────────────────────────────────
 router.get("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: servicioIdParamSchema }, req, res);
+    if (!validated) return;
+
     const servicio = await prisma.servicio.findUnique({
-      where: { id: req.params.id },
-      include: servicioInclude,
+      where: { id: validated.params.id },
+      include: servicioDetailInclude,
     });
-    if (!servicio) return res.status(404).json({ error: "Servicio no encontrado" });
+
+    if (!servicio) {
+      return res.status(404).json({ error: "Servicio no encontrado" });
+    }
+
     res.json(servicio);
   } catch (err) {
     next(err);
   }
 });
 
-// ── POST /api/servicios ────────────────────────────────────────────────────
 router.post("/", async (req, res, next) => {
   try {
-    // Validar con Zod
     const body = validate(createServicioSchema, req.body, res);
     if (!body) return;
 
-    const {
-      fechaServicio,
-      origen,
-      destino,
-      estado,
-      observaciones,
-      tipoContrato,
-      vehiculoId,
-      conductorId,
-      subcontratado,
-      clienteIds,
-    } = body;
+    const servicio = await prisma.$transaction(async (tx) => {
+      const clienteIds = await resolveClienteIds(tx, body);
 
-    let finalVehiculoId = vehiculoId;
-    let finalConductorId = conductorId;
+      let vehiculoId = body.vehiculoId;
+      let conductorId = body.conductorId;
 
-    if (tipoContrato === "PROPIO") {
-      const validacion = await validarRecursosPropiosActivos(prisma, {
-        vehiculoId: finalVehiculoId,
-        conductorId: finalConductorId,
-      });
-
-      if (validacion) {
-        return res.status(validacion.status).json({ error: validacion.error });
+      if (body.tipoContrato === "PROPIO") {
+        const validacion = await validarRecursosPropiosActivos(tx, { vehiculoId, conductorId });
+        if (validacion) {
+          const error = new Error(validacion.error);
+          error.status = validacion.status;
+          throw error;
+        }
+      } else {
+        const resources = await resolveSubcontratadoResources(tx, body.subcontratado);
+        vehiculoId = resources.vehiculoId;
+        conductorId = resources.conductorId;
       }
-    }
 
-    // ── Transacción para SUBCONTRATADO ────────────────────────────────────
-    if (tipoContrato === "SUBCONTRATADO" && subcontratado) {
-      const { empresa, vehiculo: veh, conductor: cond } = subcontratado;
-
-      const resultado = await prisma.$transaction(async (tx) => {
-        // Buscar o crear propietario subcontratado por RUC
-        let propietario = await tx.propietarioSubcontratado.findUnique({
-          where: { ruc: empresa.ruc },
-        });
-        if (!propietario) {
-          propietario = await tx.propietarioSubcontratado.create({
-            data: {
-              razonSocial: empresa.razonSocial,
-              ruc: empresa.ruc,
-              contacto: empresa.contacto || null,
-              telefono: empresa.telefono || null,
-            },
-          });
-        }
-
-        // Buscar o crear vehículo por placa
-        let vehiculo = await tx.vehiculo.findUnique({ where: { placa: veh.placa } });
-        if (!vehiculo) {
-          vehiculo = await tx.vehiculo.create({
-            data: {
-              placa: veh.placa,
-              placaCarreta: veh.placaCarreta || null,
-              tipoUnidad: veh.tipoUnidad || "CAMION",
-              tipo: "SUBCONTRATADO",
-              propietarioSubcontratadoId: propietario.id,
-            },
-          });
-        }
-
-        // Buscar o crear conductor por nroDocumento
-        let conductor = await tx.conductor.findFirst({
-          where: { nroDocumento: cond.nroDocumento },
-        });
-        if (!conductor) {
-          conductor = await tx.conductor.create({
-            data: {
-              nombre: cond.nombre,
-              apPaterno: cond.apPaterno,
-              apMaterno: cond.apMaterno || null,
-              tipoDocumento: cond.tipoDocumento || "DNI",
-              nroDocumento: cond.nroDocumento,
-              licencia: cond.licencia || null,
-              tipo: "SUBCONTRATADO",
-              propietarioSubcontratadoId: propietario.id,
-            },
-          });
-        }
-
-        // Crear servicio dentro de la transacción
-        const servicio = await tx.servicio.create({
-          data: {
-            fechaServicio: new Date(fechaServicio),
-            origen,
-            destino,
-            estado,
-            observaciones: observaciones || null,
-            vehiculoId: vehiculo.id,
-            conductorId: conductor.id,
-            clientes: {
-              create: clienteIds.map((clienteId) => ({ clienteId })),
-            },
+      return tx.servicio.create({
+        data: {
+          fechaServicio: new Date(body.fechaServicio),
+          origen: body.origen,
+          destino: body.destino,
+          estado: body.estado,
+          observaciones: body.observaciones ?? null,
+          vehiculoId,
+          conductorId,
+          clientes: {
+            create: clienteIds.map((clienteId) => ({ clienteId })),
           },
-          include: servicioInclude,
-        });
-
-        return servicio;
-      });
-
-      logger.info("Servicio SUBCONTRATADO creado", {
-        servicioId: resultado.id,
-        usuarioId: req.user.id,
-        clienteIds,
-      });
-
-      return res.status(201).json(resultado);
-    }
-
-    // ── PROPIO: crear servicio directamente ───────────────────────────────
-    const servicio = await prisma.servicio.create({
-      data: {
-        fechaServicio: new Date(fechaServicio),
-        origen,
-        destino,
-        estado,
-        observaciones: observaciones || null,
-        vehiculoId: finalVehiculoId,
-        conductorId: finalConductorId,
-        clientes: {
-          create: clienteIds.map((clienteId) => ({ clienteId })),
         },
-      },
-      include: servicioInclude,
+        include: servicioDetailInclude,
+      });
     });
 
-    logger.info("Servicio PROPIO creado", {
+    req.log.info("Servicio creado", {
       servicioId: servicio.id,
       usuarioId: req.user.id,
-      vehiculoId: finalVehiculoId,
-      conductorId: finalConductorId,
-      clienteIds,
+    });
+    await recordAuditEvent({
+      entityType: "Servicio",
+      entityId: servicio.id,
+      action: "create",
+      req,
+      metadata: {
+        tipoContrato: getTipoContrato(servicio),
+        clienteIds: servicio.clientes.map((item) => item.clienteId),
+      },
     });
 
     res.status(201).json(servicio);
@@ -252,183 +352,146 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-// ── PUT /api/servicios/:id ─────────────────────────────────────────────────
 router.put("/:id", async (req, res, next) => {
   try {
-    // Validar campos base con Zod
+    const validated = validateRequest({ params: servicioIdParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(updateServicioSchema, req.body, res);
     if (!body) return;
 
-    // Campos extra leídos directamente (no validados por updateServicioSchema)
-    const {
-      tipoContrato,
-      vehiculoId,
-      conductorId,
-      subcontratado,
-      clienteIds,      // array de UUIDs (formato nuevo)
-      clientes,        // array de {razonSocial, ruc} (formato legacy)
-    } = req.body;
-
-    const { fechaServicio, origen, destino, estado, observaciones } = body;
-
     const existing = await prisma.servicio.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: {
-        vehiculo: {
-          select: { tipo: true },
-        },
+        vehiculo: { include: { propietarioSubcontratado: true } },
+        conductor: { include: { propietarioSubcontratado: true } },
+        clientes: true,
       },
     });
-    if (!existing) return res.status(404).json({ error: "Servicio no encontrado" });
 
-    const tipoContratoFinal = tipoContrato ?? (existing.vehiculo?.tipo === "SUBCONTRATADO" ? "SUBCONTRATADO" : "PROPIO");
-    const finalVehiculoPropioId = tipoContratoFinal === "PROPIO"
-      ? (vehiculoId || existing.vehiculoId)
-      : null;
-    const finalConductorPropioId = tipoContratoFinal === "PROPIO"
-      ? (conductorId || existing.conductorId)
-      : null;
-
-    if (tipoContratoFinal === "PROPIO") {
-      const validacion = await validarRecursosPropiosActivos(prisma, {
-        vehiculoId: finalVehiculoPropioId,
-        conductorId: finalConductorPropioId,
-      });
-
-      if (validacion) {
-        return res.status(validacion.status).json({ error: validacion.error });
-      }
+    if (!existing) {
+      return res.status(404).json({ error: "Servicio no encontrado" });
     }
 
+    const tipoContratoFinal = body.tipoContrato ?? (existing.vehiculo?.tipo === "SUBCONTRATADO" ? "SUBCONTRATADO" : "PROPIO");
+
     const servicio = await prisma.$transaction(async (tx) => {
-      // ── Resolver vehículo y conductor finales ─────────────────────────────
-      let finalVehiculoId  = existing.vehiculoId;
+      let finalVehiculoId = existing.vehiculoId;
       let finalConductorId = existing.conductorId;
+      let finalClienteIds = existing.clientes.map((item) => item.clienteId);
 
-      if (tipoContrato === "PROPIO") {
-        if (vehiculoId)  finalVehiculoId  = vehiculoId;
-        if (conductorId) finalConductorId = conductorId;
-
-      } else if (tipoContrato === "SUBCONTRATADO" && subcontratado) {
-        const { empresa, vehiculo: veh, conductor: cond } = subcontratado;
-
-        // Buscar o crear propietario por RUC
-        let propietario = await tx.propietarioSubcontratado.findUnique({
-          where: { ruc: empresa.ruc },
-        });
-        if (!propietario) {
-          propietario = await tx.propietarioSubcontratado.create({
-            data: {
-              razonSocial: empresa.razonSocial,
-              ruc: empresa.ruc,
-              contacto: empresa.contacto || null,
-              telefono: empresa.telefono || null,
-            },
-          });
-        }
-
-        // Buscar o crear vehículo por placa
-        let vehiculo = await tx.vehiculo.findUnique({ where: { placa: veh.placa } });
-        if (!vehiculo) {
-          vehiculo = await tx.vehiculo.create({
-            data: {
-              placa: veh.placa,
-              placaCarreta: veh.placaCarreta || null,
-              tipoUnidad: veh.tipoUnidad || "CAMION",
-              tipo: "SUBCONTRATADO",
-              propietarioSubcontratadoId: propietario.id,
-            },
-          });
-        }
-        finalVehiculoId = vehiculo.id;
-
-        // Buscar o crear conductor por nroDocumento
-        let conductor = await tx.conductor.findFirst({
-          where: { nroDocumento: cond.nroDocumento },
-        });
-        if (!conductor) {
-          conductor = await tx.conductor.create({
-            data: {
-              nombre: cond.nombre,
-              apPaterno: cond.apPaterno,
-              apMaterno: cond.apMaterno || null,
-              tipoDocumento: cond.tipoDocumento || "DNI",
-              nroDocumento: cond.nroDocumento,
-              licencia: cond.licencia || null,
-              tipo: "SUBCONTRATADO",
-              propietarioSubcontratadoId: propietario.id,
-            },
-          });
-        }
-        finalConductorId = conductor.id;
+      if (body.clienteIds || body.clientes) {
+        finalClienteIds = await resolveClienteIds(tx, body);
       }
 
-      // ── Actualizar clientes ───────────────────────────────────────────────
-      if (Array.isArray(clienteIds)) {
-        // Formato nuevo: array de UUIDs
-        await tx.servicioCliente.deleteMany({ where: { servicioId: req.params.id } });
-        if (clienteIds.length > 0) {
-          await tx.servicioCliente.createMany({
-            data: clienteIds.map((cid) => ({ servicioId: req.params.id, clienteId: cid })),
-          });
+      if (tipoContratoFinal === "PROPIO") {
+        finalVehiculoId = body.vehiculoId ?? existing.vehiculoId;
+        finalConductorId = body.conductorId ?? existing.conductorId;
+
+        const validacion = await validarRecursosPropiosActivos(tx, {
+          vehiculoId: finalVehiculoId,
+          conductorId: finalConductorId,
+        });
+
+        if (validacion) {
+          const error = new Error(validacion.error);
+          error.status = validacion.status;
+          throw error;
         }
-      } else if (Array.isArray(clientes)) {
-        // Formato legacy: array de {razonSocial, ruc}
-        await tx.servicioCliente.deleteMany({ where: { servicioId: req.params.id } });
-        const resolvedIds = await Promise.all(
-          clientes.map(async ({ razonSocial, ruc }) => {
-            let c = await tx.cliente.findUnique({ where: { ruc } });
-            if (!c) c = await tx.cliente.create({ data: { razonSocial, ruc } });
-            return c.id;
-          })
-        );
-        if (resolvedIds.length > 0) {
-          await tx.servicioCliente.createMany({
-            data: resolvedIds.map((cid) => ({ servicioId: req.params.id, clienteId: cid })),
-          });
-        }
+      } else if (body.subcontratado) {
+        const resources = await resolveSubcontratadoResources(tx, body.subcontratado);
+        finalVehiculoId = resources.vehiculoId;
+        finalConductorId = resources.conductorId;
+      } else if (existing.vehiculo?.tipo !== "SUBCONTRATADO") {
+        const error = new Error("Debes enviar el bloque subcontratado para cambiar el servicio a SUBCONTRATADO.");
+        error.status = 400;
+        throw error;
       }
 
-      // ── Actualizar el servicio ────────────────────────────────────────────
+      await tx.servicioCliente.deleteMany({ where: { servicioId: existing.id } });
+      if (finalClienteIds.length > 0) {
+        await tx.servicioCliente.createMany({
+          data: finalClienteIds.map((clienteId) => ({
+            servicioId: existing.id,
+            clienteId,
+          })),
+        });
+      }
+
       return tx.servicio.update({
-        where: { id: req.params.id },
+        where: { id: existing.id },
         data: {
-          ...(fechaServicio && { fechaServicio: new Date(fechaServicio) }),
-          ...(origen        && { origen }),
-          ...(destino       && { destino }),
-          ...(estado        && { estado }),
-          ...(observaciones !== undefined && { observaciones }),
-          vehiculoId:  finalVehiculoId,
+          ...(body.fechaServicio !== undefined && { fechaServicio: new Date(body.fechaServicio) }),
+          ...(body.origen !== undefined && { origen: body.origen }),
+          ...(body.destino !== undefined && { destino: body.destino }),
+          ...(body.estado !== undefined && { estado: body.estado }),
+          ...(body.observaciones !== undefined && { observaciones: body.observaciones }),
+          vehiculoId: finalVehiculoId,
           conductorId: finalConductorId,
         },
-        include: servicioInclude,
+        include: servicioDetailInclude,
       });
     });
 
-    logger.info("Servicio actualizado", { servicioId: req.params.id, usuarioId: req.user.id });
+    req.log.info("Servicio actualizado", {
+      servicioId: servicio.id,
+      usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Servicio",
+      entityId: servicio.id,
+      action: "update",
+      req,
+      metadata: {
+        campos: Object.keys(body),
+        tipoContratoFinal,
+      },
+    });
+
     res.json(servicio);
   } catch (err) {
     next(err);
   }
 });
 
-// ── PATCH /api/servicios/:id/estado ───────────────────────────────────────
 router.patch("/:id/estado", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: servicioIdParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(patchEstadoSchema, req.body, res);
     if (!body) return;
 
-    const servicio = await prisma.servicio.update({
-      where: { id: req.params.id },
-      data: { estado: body.estado },
-      include: servicioInclude,
+    const existing = await prisma.servicio.findUnique({
+      where: { id: validated.params.id },
+      select: { id: true, estado: true },
     });
 
-    logger.info("Estado de servicio actualizado", {
-      servicioId: req.params.id,
-      estadoAnterior: req.body._estadoAnterior, // si el cliente lo envía
+    if (!existing) {
+      return res.status(404).json({ error: "Servicio no encontrado" });
+    }
+
+    const servicio = await prisma.servicio.update({
+      where: { id: existing.id },
+      data: { estado: body.estado },
+      include: servicioDetailInclude,
+    });
+
+    req.log.info("Estado de servicio actualizado", {
+      servicioId: servicio.id,
+      estadoAnterior: existing.estado,
       estadoNuevo: body.estado,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Servicio",
+      entityId: servicio.id,
+      action: "status_change",
+      req,
+      metadata: {
+        estadoAnterior: existing.estado,
+        estadoNuevo: body.estado,
+      },
     });
 
     res.json(servicio);

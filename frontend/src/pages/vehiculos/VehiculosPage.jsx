@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
 const TIPO_OPTIONS = [
@@ -27,6 +28,8 @@ const ESTADO_OPTIONS = [
 
 export default function VehiculosPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "ADMIN";
   const [vehiculos, setVehiculos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -200,12 +203,14 @@ export default function VehiculosPage() {
                       <div className="flex items-center justify-end gap-2">
                         <IconAction label="Ver" onClick={() => navigate(`/vehiculos/${vehiculo.id}`)} icon={<Eye className="h-4 w-4" />} />
                         <IconAction label="Editar" onClick={() => navigate(`/vehiculos/${vehiculo.id}/editar`)} icon={<Pencil className="h-4 w-4" />} />
-                        <IconAction
-                          label={savingId === vehiculo.id ? (vehiculo.estado === "ACTIVO" ? "Desactivando..." : "Activando...") : vehiculo.estado === "ACTIVO" ? "Desactivar" : "Activar"}
-                          onClick={() => handleToggleStatusClick(vehiculo)}
-                          disabled={savingId === vehiculo.id}
-                          icon={<Slash className="h-4 w-4" />}
-                        />
+                        {isAdmin ? (
+                          <IconAction
+                            label={savingId === vehiculo.id ? (vehiculo.estado === "ACTIVO" ? "Desactivando..." : "Activando...") : vehiculo.estado === "ACTIVO" ? "Desactivar" : "Activar"}
+                            onClick={() => handleToggleStatusClick(vehiculo)}
+                            disabled={savingId === vehiculo.id}
+                            icon={<Slash className="h-4 w-4" />}
+                          />
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -216,20 +221,22 @@ export default function VehiculosPage() {
         )}
       </div>
 
-      <ConfirmModal
-        open={Boolean(vehiculoToToggle)}
-        title={vehiculoToToggle?.estado === "ACTIVO" ? "Desactivar vehiculo" : "Activar vehiculo"}
-        description={vehiculoToToggle ? `Seguro que deseas ${statusAction} el vehiculo "${vehiculoToToggle.placa}"?` : ""}
-        warning={vehiculoToToggle?.estado === "ACTIVO"
-          ? "Al desactivarlo, este vehiculo dejara de visualizarse en modulos operativos como servicios."
-          : "Al activarlo, este vehiculo volvera a estar disponible en los demas modulos."}
-        confirmLabel={vehiculoToToggle?.estado === "ACTIVO" ? "Desactivar vehiculo" : "Activar vehiculo"}
-        loadingLabel={vehiculoToToggle?.estado === "ACTIVO" ? "Desactivando..." : "Activando..."}
-        loading={savingId === vehiculoToToggle?.id}
-        error={statusError}
-        onClose={handleCloseStatusModal}
-        onConfirm={handleConfirmToggleStatus}
-      />
+      {isAdmin ? (
+        <ConfirmModal
+          open={Boolean(vehiculoToToggle)}
+          title={vehiculoToToggle?.estado === "ACTIVO" ? "Desactivar vehiculo" : "Activar vehiculo"}
+          description={vehiculoToToggle ? `Seguro que deseas ${statusAction} el vehiculo "${vehiculoToToggle.placa}"?` : ""}
+          warning={vehiculoToToggle?.estado === "ACTIVO"
+            ? "Al desactivarlo, este vehiculo dejara de visualizarse en modulos operativos como servicios."
+            : "Al activarlo, este vehiculo volvera a estar disponible en los demas modulos."}
+          confirmLabel={vehiculoToToggle?.estado === "ACTIVO" ? "Desactivar vehiculo" : "Activar vehiculo"}
+          loadingLabel={vehiculoToToggle?.estado === "ACTIVO" ? "Desactivando..." : "Activando..."}
+          loading={savingId === vehiculoToToggle?.id}
+          error={statusError}
+          onClose={handleCloseStatusModal}
+          onConfirm={handleConfirmToggleStatus}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,20 +1,54 @@
 const express = require("express");
+const { z } = require("zod");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
-const { requireOperaciones } = require("../middleware/rbac");
-const logger = require("../lib/logger");
-const { validate } = require("../lib/validate");
+const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
+const { recordAuditEvent } = require("../lib/audit");
+const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
+const { validate, validateRequest } = require("../lib/validate");
 const {
+  LIQUIDACION_STATUS,
   createLiquidacionSchema,
   patchLiquidacionStatusSchema,
   updateLiquidacionSchema,
 } = require("../validators/liquidaciones.schema");
 const { computeLiquidacion } = require("../modules/liquidaciones/computeLiquidacion");
+const {
+  booleanQueryField,
+  enumQueryField,
+  idParamSchema,
+  isoDateQueryField,
+  paginationQuerySchema,
+  stringQueryField,
+  uuidQueryField,
+} = require("../validators/common.schema");
 
 const router = express.Router();
 
 router.use(authMiddleware);
 router.use(requireOperaciones);
+
+const liquidacionListQuerySchema = paginationQuerySchema.extend({
+  texto: stringQueryField("texto", { max: 120 }),
+  status: enumQueryField(LIQUIDACION_STATUS, "status"),
+  conductorId: uuidQueryField("conductorId"),
+  servicioId: uuidQueryField("servicioId"),
+  pendientes: booleanQueryField("pendientes"),
+  mes: z.preprocess((value) => (value === undefined ? undefined : value), z.coerce.number().int().min(1).max(12).optional()),
+  anio: z.preprocess((value) => (value === undefined ? undefined : value), z.coerce.number().int().min(2020).max(2100).optional()),
+  desde: isoDateQueryField("desde"),
+  hasta: isoDateQueryField("hasta"),
+  favor: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim().toUpperCase() : value),
+    z.enum(["EMPRESA", "CONDUCTOR"]).optional(),
+  ),
+}).strict();
+
+const serviciosDisponiblesQuerySchema = z.object({
+  texto: stringQueryField("texto", { max: 120 }),
+  liquidacionId: uuidQueryField("liquidacionId"),
+  limit: z.preprocess((value) => (value === undefined ? 25 : value), z.coerce.number().int().min(1).max(50)),
+}).strict();
 
 const liquidacionInclude = {
   comprobantes: {
@@ -300,14 +334,18 @@ function scoreServicio(servicio, referencia) {
 
 router.get("/", async (req, res, next) => {
   try {
-    const { texto, status, conductorId, servicioId, pendientes, favor, mes, anio, desde, hasta } = req.query;
+    const validated = validateRequest({ query: liquidacionListQuerySchema }, req, res);
+    if (!validated) return;
+
+    const { texto, status, conductorId, servicioId, pendientes, favor, mes, anio, desde, hasta } = validated.query;
+    const pagination = resolvePagination(validated.query, { defaultLimit: 100, maxLimit: 100 });
     const andConditions = [];
 
     if (status) andConditions.push({ status });
     if (conductorId) andConditions.push({ conductorId });
     if (servicioId) andConditions.push({ servicioId });
 
-    if (pendientes === "true") {
+    if (pendientes) {
       andConditions.push({ status: { in: ["PENDIENTE", "OBSERVADA"] } });
     }
 
@@ -333,12 +371,18 @@ router.get("/", async (req, res, next) => {
 
     const where = andConditions.length > 0 ? { AND: andConditions } : undefined;
 
-    const liquidaciones = await prisma.liquidacion.findMany({
-      where,
-      include: liquidacionInclude,
-      orderBy: { createdAt: "desc" },
-    });
+    const [total, liquidaciones] = await Promise.all([
+      prisma.liquidacion.count({ where }),
+      prisma.liquidacion.findMany({
+        where,
+        include: liquidacionInclude,
+        orderBy: { createdAt: "desc" },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
 
+    applyPaginationHeaders(res, { ...pagination, total });
     res.json(
       liquidaciones
         .map(serializeLiquidacion)
@@ -355,9 +399,12 @@ router.get("/", async (req, res, next) => {
 
 router.get("/servicios-disponibles", async (req, res, next) => {
   try {
-    const texto = req.query.texto?.trim() ?? "";
-    const liquidacionId = req.query.liquidacionId?.trim() || null;
-    const limit = Math.min(Number(req.query.limit) || 25, 50);
+    const validated = validateRequest({ query: serviciosDisponiblesQuerySchema }, req, res);
+    if (!validated) return;
+
+    const texto = validated.query.texto ?? "";
+    const liquidacionId = validated.query.liquidacionId ?? null;
+    const limit = validated.query.limit;
 
     let referencia = null;
     let servicioActualId = null;
@@ -466,7 +513,10 @@ router.get("/servicios-disponibles", async (req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
-    const liquidacion = await getLiquidacionDetalle(prisma, req.params.id);
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
+    const liquidacion = await getLiquidacionDetalle(prisma, validated.params.id);
 
     if (!liquidacion) {
       return res.status(404).json({ error: "Liquidacion no encontrada." });
@@ -505,10 +555,17 @@ router.post("/", async (req, res, next) => {
       return getLiquidacionDetalle(tx, created.id);
     });
 
-    logger.info("Liquidacion creada", {
+    req.log.info("Liquidacion creada", {
       liquidacionId: liquidacion.id,
       servicioId: liquidacion.servicioId,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Liquidacion",
+      entityId: liquidacion.id,
+      action: "create",
+      req,
+      metadata: { servicioId: liquidacion.servicioId, status: liquidacion.status },
     });
 
     res.status(201).json({
@@ -522,12 +579,15 @@ router.post("/", async (req, res, next) => {
 
 router.put("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(updateLiquidacionSchema, req.body, res);
     if (!body) return;
 
     const updatedLiquidacion = await prisma.$transaction(async (tx) => {
       const existing = await tx.liquidacion.findUnique({
-        where: { id: req.params.id },
+        where: { id: validated.params.id },
         include: { servicio: true },
       });
 
@@ -544,9 +604,13 @@ router.put("/:id", async (req, res, next) => {
         throw customError;
       }
 
-      await tx.liquidacionComprobante.deleteMany({
-        where: { liquidacionId: existing.id },
-      });
+      if (existing.servicioId !== body.servicioId && req.user.rol !== "ADMIN") {
+        const forbidden = new Error("Solo un administrador puede reasignar una liquidacion a otro servicio.");
+        forbidden.status = 403;
+        throw forbidden;
+      }
+
+      await tx.liquidacionComprobante.deleteMany({ where: { liquidacionId: existing.id } });
 
       await tx.liquidacion.update({
         where: { id: existing.id },
@@ -563,10 +627,17 @@ router.put("/:id", async (req, res, next) => {
       return getLiquidacionDetalle(tx, existing.id);
     });
 
-    logger.info("Liquidacion actualizada", {
-      liquidacionId: req.params.id,
+    req.log.info("Liquidacion actualizada", {
+      liquidacionId: validated.params.id,
       servicioId: updatedLiquidacion.servicioId,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Liquidacion",
+      entityId: updatedLiquidacion.id,
+      action: "update",
+      req,
+      metadata: { servicioId: updatedLiquidacion.servicioId, campos: Object.keys(body) },
     });
 
     res.json({
@@ -580,11 +651,14 @@ router.put("/:id", async (req, res, next) => {
 
 router.patch("/:id/status", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(patchLiquidacionStatusSchema, req.body, res);
     if (!body) return;
 
     const existing = await prisma.liquidacion.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
     });
 
     if (!existing) {
@@ -602,7 +676,7 @@ router.patch("/:id/status", async (req, res, next) => {
     });
 
     const updated = await prisma.liquidacion.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: {
         status: body.status,
         detalleSaldo: computed.detalleSaldo,
@@ -610,11 +684,18 @@ router.patch("/:id/status", async (req, res, next) => {
       include: liquidacionInclude,
     });
 
-    logger.info("Status de liquidacion actualizado", {
-      liquidacionId: req.params.id,
+    req.log.info("Status de liquidacion actualizado", {
+      liquidacionId: validated.params.id,
       statusAnterior: existing.status,
       statusNuevo: body.status,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Liquidacion",
+      entityId: updated.id,
+      action: "status_change",
+      req,
+      metadata: { statusAnterior: existing.status, statusNuevo: body.status },
     });
 
     res.json({
@@ -626,10 +707,13 @@ router.patch("/:id/status", async (req, res, next) => {
   }
 });
 
-router.delete("/:id", async (req, res, next) => {
+router.delete("/:id", requireAdmin, async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const existing = await prisma.liquidacion.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       select: { id: true, servicioId: true },
     });
 
@@ -639,23 +723,30 @@ router.delete("/:id", async (req, res, next) => {
 
     await prisma.$transaction(async (tx) => {
       await tx.liquidacionComprobante.deleteMany({
-        where: { liquidacionId: req.params.id },
+        where: { liquidacionId: validated.params.id },
       });
 
       await tx.liquidacion.delete({
-        where: { id: req.params.id },
+        where: { id: validated.params.id },
       });
     });
 
-    logger.info("Liquidacion eliminada", {
-      liquidacionId: req.params.id,
+    req.log.info("Liquidacion eliminada", {
+      liquidacionId: validated.params.id,
       servicioId: existing.servicioId,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Liquidacion",
+      entityId: existing.id,
+      action: "delete",
+      req,
+      metadata: { servicioId: existing.servicioId },
     });
 
     res.json({
       ok: true,
-      id: req.params.id,
+      id: validated.params.id,
       message: "Liquidacion eliminada correctamente",
     });
   } catch (err) {

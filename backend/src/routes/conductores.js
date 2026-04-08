@@ -1,20 +1,43 @@
+const { z } = require("zod");
 const express = require("express");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
-const { requireOperaciones } = require("../middleware/rbac");
-const logger = require("../lib/logger");
-const { validate } = require("../lib/validate");
+const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
+const { recordAuditEvent } = require("../lib/audit");
+const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
+const { validate, validateRequest } = require("../lib/validate");
 const {
   createConductorSchema,
   updateConductorSchema,
   TIPOS_DOCUMENTO,
   TIPOS_CONDUCTOR,
 } = require("../validators/conductores.schema");
+const {
+  booleanQueryField,
+  enumQueryField,
+  idParamSchema,
+  paginationQuerySchema,
+  stringQueryField,
+} = require("../validators/common.schema");
 
 const router = express.Router();
 
 router.use(authMiddleware);
 router.use(requireOperaciones);
+
+const conductorBuscarQuerySchema = z.object({
+  texto: stringQueryField("texto", { max: 80 }),
+  soloPropio: booleanQueryField("soloPropio"),
+  incluirInactivos: booleanQueryField("incluirInactivos"),
+}).strict();
+
+const conductorListQuerySchema = paginationQuerySchema.extend({
+  texto: stringQueryField("texto", { max: 80 }),
+  activo: booleanQueryField("activo"),
+  tipo: enumQueryField(TIPOS_CONDUCTOR, "tipo"),
+  tipoDocumento: enumQueryField(TIPOS_DOCUMENTO, "tipoDocumento"),
+  soloPropio: booleanQueryField("soloPropio"),
+}).strict();
 
 async function upsertPropietario(propietario) {
   if (!propietario) return null;
@@ -49,26 +72,24 @@ async function conductorTieneServiciosAbiertos(conductorId) {
 
 router.get("/buscar", async (req, res, next) => {
   try {
-    const texto = req.query.texto?.trim();
-    const soloPropio = req.query.soloPropio === "true";
-    const incluirInactivos = req.query.incluirInactivos === "true";
+    const validated = validateRequest({ query: conductorBuscarQuerySchema }, req, res);
+    if (!validated) return;
 
+    const { texto, soloPropio, incluirInactivos } = validated.query;
     if (!texto || texto.length < 1) return res.json([]);
 
-    const where = {
-      ...(!incluirInactivos && { activo: true }),
-      ...(soloPropio && { propietarioSubcontratadoId: null, tipo: "PROPIO" }),
-      OR: [
-        { nombre: { contains: texto, mode: "insensitive" } },
-        { apPaterno: { contains: texto, mode: "insensitive" } },
-        { apMaterno: { contains: texto, mode: "insensitive" } },
-        { nroDocumento: { contains: texto } },
-        { licencia: { contains: texto, mode: "insensitive" } },
-      ],
-    };
-
     const conductores = await prisma.conductor.findMany({
-      where,
+      where: {
+        ...(!incluirInactivos && { activo: true }),
+        ...(soloPropio && { propietarioSubcontratadoId: null, tipo: "PROPIO" }),
+        OR: [
+          { nombre: { contains: texto, mode: "insensitive" } },
+          { apPaterno: { contains: texto, mode: "insensitive" } },
+          { apMaterno: { contains: texto, mode: "insensitive" } },
+          { nroDocumento: { contains: texto } },
+          { licencia: { contains: texto, mode: "insensitive" } },
+        ],
+      },
       include: { propietarioSubcontratado: true },
       take: 10,
       orderBy: [{ apPaterno: "asc" }, { nombre: "asc" }],
@@ -82,25 +103,16 @@ router.get("/buscar", async (req, res, next) => {
 
 router.get("/", async (req, res, next) => {
   try {
-    const texto = req.query.texto?.trim();
-    const activo = req.query.activo;
-    const tipo = req.query.tipo?.trim().toUpperCase();
-    const tipoDocumento = req.query.tipoDocumento?.trim().toUpperCase();
-    const soloPropio = req.query.soloPropio === "true";
+    const validated = validateRequest({ query: conductorListQuerySchema }, req, res);
+    if (!validated) return;
 
-    if (tipo && !TIPOS_CONDUCTOR.includes(tipo)) {
-      return res.status(400).json({ error: `tipo invalido. Valores: ${TIPOS_CONDUCTOR.join(", ")}` });
-    }
-
-    if (tipoDocumento && !TIPOS_DOCUMENTO.includes(tipoDocumento)) {
-      return res.status(400).json({ error: `tipoDocumento invalido. Valores: ${TIPOS_DOCUMENTO.join(", ")}` });
-    }
+    const { texto, activo, tipo, tipoDocumento, soloPropio } = validated.query;
+    const pagination = resolvePagination(validated.query, { defaultLimit: 100, maxLimit: 100 });
 
     const where = {
       ...(tipo && { tipo }),
       ...(tipoDocumento && { tipoDocumento }),
-      ...(activo === "true" && { activo: true }),
-      ...(activo === "false" && { activo: false }),
+      ...(typeof activo === "boolean" && { activo }),
       ...(soloPropio && { propietarioSubcontratadoId: null, tipo: "PROPIO" }),
       ...(texto && {
         OR: [
@@ -114,15 +126,21 @@ router.get("/", async (req, res, next) => {
       }),
     };
 
-    const conductores = await prisma.conductor.findMany({
-      where,
-      include: {
-        propietarioSubcontratado: true,
-        _count: { select: { servicios: true, liquidaciones: true } },
-      },
-      orderBy: [{ apPaterno: "asc" }, { nombre: "asc" }],
-    });
+    const [total, conductores] = await Promise.all([
+      prisma.conductor.count({ where }),
+      prisma.conductor.findMany({
+        where,
+        include: {
+          propietarioSubcontratado: true,
+          _count: { select: { servicios: true, liquidaciones: true } },
+        },
+        orderBy: [{ apPaterno: "asc" }, { nombre: "asc" }],
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
 
+    applyPaginationHeaders(res, { ...pagination, total });
     res.json(conductores);
   } catch (err) {
     next(err);
@@ -131,16 +149,20 @@ router.get("/", async (req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
+    const conductorId = validated.params.id;
     const [conductor, serviciosRecientes, liquidacionesRecientes] = await Promise.all([
       prisma.conductor.findUnique({
-        where: { id: req.params.id },
+        where: { id: conductorId },
         include: {
           propietarioSubcontratado: true,
           _count: { select: { servicios: true, liquidaciones: true } },
         },
       }),
       prisma.servicio.findMany({
-        where: { conductorId: req.params.id },
+        where: { conductorId },
         orderBy: { fechaServicio: "desc" },
         take: 5,
         include: {
@@ -149,7 +171,7 @@ router.get("/:id", async (req, res, next) => {
         },
       }),
       prisma.liquidacion.findMany({
-        where: { conductorId: req.params.id },
+        where: { conductorId },
         orderBy: { createdAt: "desc" },
         take: 5,
       }),
@@ -205,7 +227,14 @@ router.post("/", async (req, res, next) => {
       },
     });
 
-    logger.info("Conductor creado", { conductorId: conductor.id, usuarioId: req.user.id });
+    req.log.info("Conductor creado", { conductorId: conductor.id, usuarioId: req.user.id });
+    await recordAuditEvent({
+      entityType: "Conductor",
+      entityId: conductor.id,
+      action: "create",
+      req,
+      metadata: { tipo: conductor.tipo, nroDocumento: conductor.nroDocumento },
+    });
     res.status(201).json(conductor);
   } catch (err) {
     next(err);
@@ -214,11 +243,14 @@ router.post("/", async (req, res, next) => {
 
 router.put("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(updateConductorSchema, req.body, res);
     if (!body) return;
 
     const actual = await prisma.conductor.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: { propietarioSubcontratado: true },
     });
 
@@ -262,7 +294,7 @@ router.put("/:id", async (req, res, next) => {
     }
 
     const conductor = await prisma.conductor.update({
-      where: { id: req.params.id },
+      where: { id: actual.id },
       data: {
         ...(body.nombre !== undefined && { nombre: body.nombre }),
         ...(body.apPaterno !== undefined && { apPaterno: body.apPaterno }),
@@ -280,17 +312,28 @@ router.put("/:id", async (req, res, next) => {
       },
     });
 
-    logger.info("Conductor actualizado", { conductorId: req.params.id, usuarioId: req.user.id });
+    const action = body.activo === false && actual.activo !== false ? "deactivate" : "update";
+    req.log.info("Conductor actualizado", { conductorId: actual.id, usuarioId: req.user.id });
+    await recordAuditEvent({
+      entityType: "Conductor",
+      entityId: conductor.id,
+      action,
+      req,
+      metadata: { campos: Object.keys(body), activoAnterior: actual.activo, activoNuevo: conductor.activo },
+    });
     res.json(conductor);
   } catch (err) {
     next(err);
   }
 });
 
-router.delete("/:id", async (req, res, next) => {
+router.delete("/:id", requireAdmin, async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const conductor = await prisma.conductor.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: {
         servicios: {
           where: { estado: { in: ["PROGRAMADO", "EN_TRANSITO"] } },
@@ -319,7 +362,7 @@ router.delete("/:id", async (req, res, next) => {
     }
 
     const actualizado = await prisma.conductor.update({
-      where: { id: req.params.id },
+      where: { id: conductor.id },
       data: { activo: false },
       include: {
         propietarioSubcontratado: true,
@@ -327,7 +370,14 @@ router.delete("/:id", async (req, res, next) => {
       },
     });
 
-    logger.info("Conductor desactivado", { conductorId: req.params.id, usuarioId: req.user.id });
+    req.log.info("Conductor desactivado", { conductorId: conductor.id, usuarioId: req.user.id });
+    await recordAuditEvent({
+      entityType: "Conductor",
+      entityId: conductor.id,
+      action: "deactivate",
+      req,
+      metadata: { nroDocumento: conductor.nroDocumento },
+    });
     res.json({ ok: true, message: "Conductor desactivado correctamente.", conductor: actualizado });
   } catch (err) {
     next(err);

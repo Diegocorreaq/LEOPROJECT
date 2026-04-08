@@ -13,6 +13,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import LiquidacionStatusBadge from "./LiquidacionStatusBadge";
 import {
@@ -51,6 +52,8 @@ export default function LiquidacionDetailDrawer({
   onEdit,
 }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "ADMIN";
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -151,14 +154,16 @@ export default function LiquidacionDetailDrawer({
               <Pencil className="h-4 w-4" />
               Editar liquidacion
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onEdit?.(liquidacionId, { focusService: true })}
-            >
-              <ArrowRightLeft className="h-4 w-4" />
-              Reasignar servicio
-            </Button>
+            {isAdmin ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onEdit?.(liquidacionId, { focusService: true })}
+              >
+                <ArrowRightLeft className="h-4 w-4" />
+                Reasignar servicio
+              </Button>
+            ) : null}
             {detail?.servicioId && (
               <Button
                 size="sm"
@@ -169,17 +174,19 @@ export default function LiquidacionDetailDrawer({
                 Abrir servicio
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => {
-                setDeleteError("");
-                setDeleteOpen(true);
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-              Eliminar
-            </Button>
+            {isAdmin ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  setDeleteError("");
+                  setDeleteOpen(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar
+              </Button>
+            ) : null}
           </div>
 
           <p className="text-xs leading-5 text-slate-500">
@@ -357,23 +364,25 @@ export default function LiquidacionDetailDrawer({
         </div>
       </div>
 
-      <ConfirmModal
-        open={deleteOpen}
-        title="Eliminar liquidacion"
-        description="Esta accion eliminara la liquidacion y sus comprobantes relacionados."
-        warning="No se puede deshacer."
-        confirmLabel="Eliminar liquidacion"
-        loadingLabel="Eliminando..."
-        error={deleteError}
-        loading={deleteSaving}
-        onClose={() => {
-          if (!deleteSaving) {
-            setDeleteOpen(false);
-            setDeleteError("");
-          }
-        }}
-        onConfirm={handleDelete}
-      />
+      {isAdmin ? (
+        <ConfirmModal
+          open={deleteOpen}
+          title="Eliminar liquidacion"
+          description="Esta accion eliminara la liquidacion y sus comprobantes relacionados."
+          warning="No se puede deshacer."
+          confirmLabel="Eliminar liquidacion"
+          loadingLabel="Eliminando..."
+          error={deleteError}
+          loading={deleteSaving}
+          onClose={() => {
+            if (!deleteSaving) {
+              setDeleteOpen(false);
+              setDeleteError("");
+            }
+          }}
+          onConfirm={handleDelete}
+        />
+      ) : null}
     </>
   );
 }

@@ -18,12 +18,22 @@
 
 const express = require("express");
 const multer = require("multer");
+const { z } = require("zod");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
-const { requireOperaciones } = require("../middleware/rbac");
-const logger = require("../lib/logger");
-const { validate } = require("../lib/validate");
-const { patchFacturaSchema, vincularFacturaSchema } = require("../validators/facturas.schema");
+const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
+const { recordAuditEvent } = require("../lib/audit");
+const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
+const { validate, validateRequest } = require("../lib/validate");
+const { ESTADOS_PAGO, patchFacturaSchema, vincularFacturaSchema } = require("../validators/facturas.schema");
+const {
+  booleanQueryField,
+  idParamSchema,
+  isoDateQueryField,
+  paginationQuerySchema,
+  stringQueryField,
+  uuidQueryField,
+} = require("../validators/common.schema");
 const { resolveImportFile, resolveZipXmlEntries } = require("../modules/facturas/resolveImportFile");
 const { parseXmlFactura } = require("../modules/facturas/parseXmlFactura");
 const { parsePdfFactura } = require("../modules/facturas/parsePdfFactura");
@@ -32,6 +42,22 @@ const { buildFacturaChecklist } = require("../modules/facturas/buildFacturaCheck
 const router = express.Router();
 router.use(authMiddleware);
 router.use(requireOperaciones);
+
+const facturaListQuerySchema = paginationQuerySchema.extend({
+  texto: stringQueryField("texto", { max: 120 }),
+  estadoPago: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim().toUpperCase() : value),
+    z.enum(ESTADOS_PAGO).optional(),
+  ),
+  sinVincular: booleanQueryField("sinVincular"),
+  clienteId: uuidQueryField("clienteId"),
+  desde: isoDateQueryField("desde"),
+  hasta: isoDateQueryField("hasta"),
+}).strict();
+
+const facturaServiciosDisponiblesQuerySchema = z.object({
+  texto: stringQueryField("texto", { max: 120 }),
+}).strict();
 
 // ── Multer: memoria, máx 30 MB (masivo), solo XML/ZIP/PDF ─────────────────────
 const upload = multer({
@@ -212,13 +238,17 @@ async function importarUnXml(buffer, filename) {
 // ── GET /api/facturas ──────────────────────────────────────────────────────────
 router.get("/", async (req, res, next) => {
   try {
-    const { texto, estadoPago, sinVincular, clienteId, desde, hasta } = req.query;
+    const validated = validateRequest({ query: facturaListQuerySchema }, req, res);
+    if (!validated) return;
+
+    const { texto, estadoPago, sinVincular, clienteId, desde, hasta } = validated.query;
+    const pagination = resolvePagination(validated.query, { defaultLimit: 100, maxLimit: 100 });
 
     const where = {};
 
     if (estadoPago) where.estadoPago = estadoPago;
     if (clienteId) where.clienteId = clienteId;
-    if (sinVincular === "true") where.ordenServicioId = null;
+    if (sinVincular) where.ordenServicioId = null;
 
     if (desde || hasta) {
       where.fechaEmision = {};
@@ -246,29 +276,34 @@ router.get("/", async (req, res, next) => {
       ];
     }
 
-    const facturas = await prisma.factura.findMany({
-      where,
-      select: {
-        id: true,
-        serie: true,
-        numero: true,
-        tipo: true,
-        fechaEmision: true,
-        total: true,
-        estadoPago: true,
-        ordenServicioId: true,
-        origenImportacion: true,
-        cliente: { select: { id: true, razonSocial: true, ruc: true } },
-        ordenServicio: {
-          select: {
-            id: true,
-            servicio: { select: { id: true, origen: true, destino: true } },
+    const [total, facturas] = await Promise.all([
+      prisma.factura.count({ where }),
+      prisma.factura.findMany({
+        where,
+        select: {
+          id: true,
+          serie: true,
+          numero: true,
+          tipo: true,
+          fechaEmision: true,
+          total: true,
+          estadoPago: true,
+          ordenServicioId: true,
+          origenImportacion: true,
+          cliente: { select: { id: true, razonSocial: true, ruc: true } },
+          ordenServicio: {
+            select: {
+              id: true,
+              servicio: { select: { id: true, origen: true, destino: true } },
+            },
           },
+          _count: { select: { guias: true } },
         },
-        _count: { select: { guias: true } },
-      },
-      orderBy: [{ fechaEmision: "desc" }, { createdAt: "desc" }],
-    });
+        orderBy: [{ fechaEmision: "desc" }, { createdAt: "desc" }],
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
 
     const result = facturas.map((f) => ({
       ...f,
@@ -277,6 +312,7 @@ router.get("/", async (req, res, next) => {
       _count: undefined,
     }));
 
+    applyPaginationHeaders(res, { ...pagination, total });
     res.json(result);
   } catch (err) {
     next(err);
@@ -286,7 +322,10 @@ router.get("/", async (req, res, next) => {
 // ── GET /api/facturas/servicios-disponibles ────────────────────────────────────
 router.get("/servicios-disponibles", async (req, res, next) => {
   try {
-    const { texto } = req.query;
+    const validated = validateRequest({ query: facturaServiciosDisponiblesQuerySchema }, req, res);
+    if (!validated) return;
+
+    const { texto } = validated.query;
 
     const where = {};
     if (texto) {
@@ -341,8 +380,11 @@ router.get("/servicios-disponibles", async (req, res, next) => {
 // ── GET /api/facturas/:id ──────────────────────────────────────────────────────
 router.get("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const factura = await prisma.factura.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: facturaInclude,
     });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
@@ -356,8 +398,11 @@ router.get("/:id", async (req, res, next) => {
 // ── GET /api/facturas/:id/sugerencias-servicio ────────────────────────────────
 router.get("/:id/sugerencias-servicio", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const factura = await prisma.factura.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: { cliente: true, guias: true },
     });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
@@ -552,13 +597,20 @@ router.post("/importar", upload.single("file"), async (req, res, next) => {
       return created;
     });
 
-    logger.info("Factura importada", {
+    req.log.info("Factura importada", {
       facturaId: factura.id,
       serie,
       numero,
       sourceType: resolved.sourceType,
       clienteId: cliente.id,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Factura",
+      entityId: factura.id,
+      action: "import",
+      req,
+      metadata: { serie, numero, sourceType: resolved.sourceType, clienteId: cliente.id },
     });
 
     // 6. Checklist
@@ -649,7 +701,7 @@ router.post("/importar-masivo", uploadMasivo.array("files", 50), async (req, res
         }
       } catch (err) {
         fallidos++;
-        logger.error("Error en importación masiva de factura", {
+        req.log.error("Error en importación masiva de factura", {
           filename: entry.filename,
           error: err.message,
           usuarioId: req.user.id,
@@ -658,7 +710,7 @@ router.post("/importar-masivo", uploadMasivo.array("files", 50), async (req, res
       }
     }
 
-    logger.info("Importación masiva de facturas completada", {
+    req.log.info("Importación masiva de facturas completada", {
       totalRecibidos,
       importados,
       duplicados,
@@ -681,14 +733,17 @@ router.post("/importar-masivo", uploadMasivo.array("files", 50), async (req, res
 // ── PATCH /api/facturas/:id ────────────────────────────────────────────────────
 router.patch("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(patchFacturaSchema, req.body, res);
     if (!body) return;
 
-    const factura = await prisma.factura.findUnique({ where: { id: req.params.id } });
+    const factura = await prisma.factura.findUnique({ where: { id: validated.params.id } });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
 
     const updated = await prisma.factura.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: {
         ...(body.estadoPago !== undefined && { estadoPago: body.estadoPago }),
         ...(body.formaPago !== undefined && { formaPago: body.formaPago }),
@@ -701,10 +756,17 @@ router.patch("/:id", async (req, res, next) => {
       include: facturaInclude,
     });
 
-    logger.info("Factura actualizada", {
-      facturaId: req.params.id,
+    req.log.info("Factura actualizada", {
+      facturaId: validated.params.id,
       usuarioId: req.user.id,
       cambios: Object.keys(body),
+    });
+    await recordAuditEvent({
+      entityType: "Factura",
+      entityId: updated.id,
+      action: "update",
+      req,
+      metadata: { campos: Object.keys(body) },
     });
 
     res.json({ ...updated, numeroCompleto: `${updated.serie}-${updated.numero}`, message: "Cambios guardados correctamente" });
@@ -716,11 +778,14 @@ router.patch("/:id", async (req, res, next) => {
 // ── PATCH /api/facturas/:id/vincular ──────────────────────────────────────────
 router.patch("/:id/vincular", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(vincularFacturaSchema, req.body, res);
     if (!body) return;
 
     const factura = await prisma.factura.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: { guias: true },
     });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
@@ -739,17 +804,24 @@ router.patch("/:id/vincular", async (req, res, next) => {
     );
 
     const updated = await prisma.factura.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: { ordenServicioId: orden.id },
       include: facturaInclude,
     });
 
-    logger.info("Factura vinculada a servicio", {
-      facturaId: req.params.id,
+    req.log.info("Factura vinculada a servicio", {
+      facturaId: validated.params.id,
       servicioId: body.servicioId,
       ordenServicioId: orden.id,
       ordenCreada: !orden.createdAt || orden.createdAt > new Date(Date.now() - 5000),
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Factura",
+      entityId: updated.id,
+      action: "link_service",
+      req,
+      metadata: { servicioId: body.servicioId, ordenServicioId: orden.id },
     });
 
     res.json({
@@ -763,10 +835,13 @@ router.patch("/:id/vincular", async (req, res, next) => {
 });
 
 // ── PATCH /api/facturas/:id/desvincular ───────────────────────────────────────
-router.patch("/:id/desvincular", async (req, res, next) => {
+router.patch("/:id/desvincular", requireAdmin, async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const factura = await prisma.factura.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
     });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
 
@@ -779,15 +854,22 @@ router.patch("/:id/desvincular", async (req, res, next) => {
     }
 
     const updated = await prisma.factura.update({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       data: { ordenServicioId: null },
       include: facturaInclude,
     });
 
-    logger.info("Factura desvinculada de servicio", {
-      facturaId: req.params.id,
+    req.log.info("Factura desvinculada de servicio", {
+      facturaId: validated.params.id,
       ordenAnteriorId: factura.ordenServicioId,
       usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Factura",
+      entityId: updated.id,
+      action: "unlink_service",
+      req,
+      metadata: { ordenAnteriorId: factura.ordenServicioId },
     });
 
     res.json({
@@ -801,28 +883,38 @@ router.patch("/:id/desvincular", async (req, res, next) => {
 });
 
 // ── DELETE /api/facturas/:id ──────────────────────────────────────────────────
-router.delete("/:id", async (req, res, next) => {
+router.delete("/:id", requireAdmin, async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const factura = await prisma.factura.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       select: { id: true, serie: true, numero: true },
     });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
 
     await prisma.$transaction(async (tx) => {
-      await tx.pago.deleteMany({ where: { facturaId: req.params.id } });
-      await tx.facturaGuia.deleteMany({ where: { facturaId: req.params.id } });
-      await tx.factura.delete({ where: { id: req.params.id } });
+      await tx.pago.deleteMany({ where: { facturaId: validated.params.id } });
+      await tx.facturaGuia.deleteMany({ where: { facturaId: validated.params.id } });
+      await tx.factura.delete({ where: { id: validated.params.id } });
     });
 
-    logger.info("Factura eliminada", {
-      facturaId: req.params.id,
+    req.log.info("Factura eliminada", {
+      facturaId: validated.params.id,
       serie: factura.serie,
       numero: factura.numero,
       usuarioId: req.user.id,
     });
+    await recordAuditEvent({
+      entityType: "Factura",
+      entityId: factura.id,
+      action: "delete",
+      req,
+      metadata: { serie: factura.serie, numero: factura.numero },
+    });
 
-    res.json({ ok: true, id: req.params.id, message: "Factura eliminada correctamente" });
+    res.json({ ok: true, id: validated.params.id, message: "Factura eliminada correctamente" });
   } catch (err) {
     next(err);
   }

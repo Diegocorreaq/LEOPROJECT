@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Pencil, Slash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
 function formatDate(value) {
@@ -30,6 +31,8 @@ function nombreCompleto(conductor) {
 export default function ConductorDetallePage() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "ADMIN";
   const [conductor, setConductor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -123,10 +126,12 @@ export default function ConductorDetallePage() {
             <Pencil className="h-4 w-4" />
             Editar
           </Button>
-          <Button variant="outline" onClick={handleOpenStatusModal} disabled={saving}>
-            <Slash className="h-4 w-4" />
-            {saving ? (isActivo ? "Desactivando..." : "Activando...") : isActivo ? "Desactivar" : "Activar"}
-          </Button>
+          {isAdmin ? (
+            <Button variant="outline" onClick={handleOpenStatusModal} disabled={saving}>
+              <Slash className="h-4 w-4" />
+              {saving ? (isActivo ? "Desactivando..." : "Activando...") : isActivo ? "Desactivar" : "Activar"}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -204,20 +209,22 @@ export default function ConductorDetallePage() {
         </div>
       </div>
 
-      <ConfirmModal
-        open={showStatusModal}
-        title={isActivo ? "Desactivar conductor" : "Activar conductor"}
-        description={`Seguro que deseas ${isActivo ? "desactivar" : "activar"} al conductor "${nombreCompleto(conductor)}"?`}
-        warning={isActivo
-          ? "Al desactivarlo, este conductor dejara de visualizarse en modulos operativos como servicios."
-          : "Al activarlo, este conductor volvera a estar disponible en los demas modulos."}
-        confirmLabel={isActivo ? "Desactivar conductor" : "Activar conductor"}
-        loadingLabel={isActivo ? "Desactivando..." : "Activando..."}
-        loading={saving}
-        error={statusError}
-        onClose={handleCloseStatusModal}
-        onConfirm={handleToggleStatus}
-      />
+      {isAdmin ? (
+        <ConfirmModal
+          open={showStatusModal}
+          title={isActivo ? "Desactivar conductor" : "Activar conductor"}
+          description={`Seguro que deseas ${isActivo ? "desactivar" : "activar"} al conductor "${nombreCompleto(conductor)}"?`}
+          warning={isActivo
+            ? "Al desactivarlo, este conductor dejara de visualizarse en modulos operativos como servicios."
+            : "Al activarlo, este conductor volvera a estar disponible en los demas modulos."}
+          confirmLabel={isActivo ? "Desactivar conductor" : "Activar conductor"}
+          loadingLabel={isActivo ? "Desactivando..." : "Activando..."}
+          loading={saving}
+          error={statusError}
+          onClose={handleCloseStatusModal}
+          onConfirm={handleToggleStatus}
+        />
+      ) : null}
     </div>
   );
 }

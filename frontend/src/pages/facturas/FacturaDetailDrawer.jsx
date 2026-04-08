@@ -6,6 +6,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import FacturaStatusBadge from "./FacturaStatusBadge";
 import FacturaEditModal from "./FacturaEditModal";
@@ -41,6 +42,8 @@ function Row({ label, value }) {
 
 export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDeleted }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "ADMIN";
   const [detail, setDetail]         = useState(factura);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState("");
@@ -160,13 +163,15 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
                   <ExternalLink className="h-4 w-4" />
                   Ir al servicio
                 </Button>
-                <Button size="sm" variant="outline"
-                  onClick={() => { setUnlinkError(""); setUnlinkOpen(true); }}
-                  disabled={loading || !detail}
-                >
-                  <Unlink className="h-4 w-4" />
-                  Desvincular
-                </Button>
+                {isAdmin ? (
+                  <Button size="sm" variant="outline"
+                    onClick={() => { setUnlinkError(""); setUnlinkOpen(true); }}
+                    disabled={loading || !detail}
+                  >
+                    <Unlink className="h-4 w-4" />
+                    Desvincular
+                  </Button>
+                ) : null}
               </>
             ) : (
               <Button size="sm" variant="outline"
@@ -177,13 +182,15 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
                 Vincular a servicio
               </Button>
             )}
-            <Button size="sm" variant="destructive"
-              onClick={() => { setDeleteError(""); setDeleteOpen(true); }}
-              disabled={loading || !detail}
-            >
-              <Trash2 className="h-4 w-4" />
-              Eliminar
-            </Button>
+            {isAdmin ? (
+              <Button size="sm" variant="destructive"
+                onClick={() => { setDeleteError(""); setDeleteOpen(true); }}
+                disabled={loading || !detail}
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -336,6 +343,7 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
         />
       )}
 
+      {isAdmin ? (
       <ConfirmModal
         open={unlinkOpen}
         title="Desvincular factura"
@@ -348,7 +356,9 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
         onClose={() => { if (!unlinkSaving) { setUnlinkOpen(false); setUnlinkError(""); } }}
         onConfirm={handleUnlink}
       />
+      ) : null}
 
+      {isAdmin ? (
       <ConfirmModal
         open={deleteOpen}
         title="Eliminar factura"
@@ -361,6 +371,7 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
         onClose={() => { if (!deleteSaving) { setDeleteOpen(false); setDeleteError(""); } }}
         onConfirm={handleDelete}
       />
+      ) : null}
     </>
   );
 }

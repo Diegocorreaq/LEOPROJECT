@@ -1,10 +1,12 @@
 const BASE_URL = "/api";
 
 export class AuthError extends Error {
-  constructor(message = "No autenticado") {
+  constructor(message = "No autenticado", options = {}) {
     super(message);
     this.name = "AuthError";
     this.status = 401;
+    this.requestId = options.requestId ?? null;
+    this.payload = options.payload ?? null;
   }
 }
 
@@ -15,6 +17,7 @@ export class ApiError extends Error {
     this.status = options.status ?? 500;
     this.details = Array.isArray(options.details) ? options.details : [];
     this.payload = options.payload ?? null;
+    this.requestId = options.requestId ?? null;
   }
 }
 
@@ -37,14 +40,20 @@ async function request(path, options = {}) {
   }
 
   if (!res.ok) {
+    const requestId = res.headers.get("x-request-id") || data?.requestId || null;
+
     if (res.status === 401) {
-      throw new AuthError(data?.error || "Sesion expirada. Inicia sesion nuevamente.");
+      throw new AuthError(data?.error || "Sesion expirada. Inicia sesion nuevamente.", {
+        requestId,
+        payload: data,
+      });
     }
 
     throw new ApiError(data?.error || `Error ${res.status} en la solicitud`, {
       status: res.status,
       details: data?.detalles,
       payload: data,
+      requestId,
     });
   }
 
@@ -72,11 +81,18 @@ export const api = {
       data = await res.json();
     }
     if (!res.ok) {
-      if (res.status === 401) throw new AuthError(data?.error || "Sesion expirada.");
+      const requestId = res.headers.get("x-request-id") || data?.requestId || null;
+      if (res.status === 401) {
+        throw new AuthError(data?.error || "Sesion expirada.", {
+          requestId,
+          payload: data,
+        });
+      }
       throw new ApiError(data?.error || `Error ${res.status}`, {
         status: res.status,
         details: data?.detalles,
         payload: data,
+        requestId,
       });
     }
     return data;

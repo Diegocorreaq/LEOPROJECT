@@ -1,35 +1,36 @@
-# Dependencias
 node_modules/
 **/node_modules/
+.pnpm-store/
 
-# Artefactos de build
 dist/
 **/dist/
 dist-ssr/
 build/
+artifacts/
+release/
+*.zip
 
-# Variables de entorno — NUNCA subir al repositorio
 .env
 .env.local
 .env.production
 .env.*.local
-**/​.env
+**/.env
 **/.env.local
 **/.env.production
+**/.env.*.local
 
-# Prisma generado
 **/generated/prisma/
 
-# Logs
 *.log
 npm-debug.log*
 pino-debug.log*
 logs/
 
-# Editor / OS
 .DS_Store
 .vscode/settings.json
 .idea/
+.claude/
+*.local.json
 *.suo
 *.ntvs*
 *.njsproj
@@ -37,7 +38,6 @@ logs/
 *.sw?
 Thumbs.db
 
-# Archivos temporales
 *.tmp
 *.temp
 .cache/

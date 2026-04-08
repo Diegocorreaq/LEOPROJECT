@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
 const TIPO_OPTIONS = [
@@ -31,6 +32,8 @@ function nombreCompleto(conductor) {
 
 export default function ConductoresPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "ADMIN";
   const [conductores, setConductores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -206,12 +209,14 @@ export default function ConductoresPage() {
                       <div className="flex items-center justify-end gap-2">
                         <IconAction label="Ver" onClick={() => navigate(`/conductores/${conductor.id}`)} icon={<Eye className="h-4 w-4" />} />
                         <IconAction label="Editar" onClick={() => navigate(`/conductores/${conductor.id}/editar`)} icon={<Pencil className="h-4 w-4" />} />
-                        <IconAction
-                          label={savingId === conductor.id ? (conductor.activo ? "Desactivando..." : "Activando...") : conductor.activo ? "Desactivar" : "Activar"}
-                          onClick={() => handleToggleStatusClick(conductor)}
-                          disabled={savingId === conductor.id}
-                          icon={<Slash className="h-4 w-4" />}
-                        />
+                        {isAdmin ? (
+                          <IconAction
+                            label={savingId === conductor.id ? (conductor.activo ? "Desactivando..." : "Activando...") : conductor.activo ? "Desactivar" : "Activar"}
+                            onClick={() => handleToggleStatusClick(conductor)}
+                            disabled={savingId === conductor.id}
+                            icon={<Slash className="h-4 w-4" />}
+                          />
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -222,20 +227,22 @@ export default function ConductoresPage() {
         )}
       </div>
 
-      <ConfirmModal
-        open={Boolean(conductorToToggle)}
-        title={conductorToToggle?.activo ? "Desactivar conductor" : "Activar conductor"}
-        description={conductorToToggle ? `Seguro que deseas ${statusAction} al conductor "${nombreCompleto(conductorToToggle)}"?` : ""}
-        warning={conductorToToggle?.activo
-          ? "Al desactivarlo, este conductor dejara de visualizarse en modulos operativos como servicios."
-          : "Al activarlo, este conductor volvera a estar disponible en los demas modulos."}
-        confirmLabel={conductorToToggle?.activo ? "Desactivar conductor" : "Activar conductor"}
-        loadingLabel={conductorToToggle?.activo ? "Desactivando..." : "Activando..."}
-        loading={savingId === conductorToToggle?.id}
-        error={statusError}
-        onClose={handleCloseStatusModal}
-        onConfirm={handleConfirmToggleStatus}
-      />
+      {isAdmin ? (
+        <ConfirmModal
+          open={Boolean(conductorToToggle)}
+          title={conductorToToggle?.activo ? "Desactivar conductor" : "Activar conductor"}
+          description={conductorToToggle ? `Seguro que deseas ${statusAction} al conductor "${nombreCompleto(conductorToToggle)}"?` : ""}
+          warning={conductorToToggle?.activo
+            ? "Al desactivarlo, este conductor dejara de visualizarse en modulos operativos como servicios."
+            : "Al activarlo, este conductor volvera a estar disponible en los demas modulos."}
+          confirmLabel={conductorToToggle?.activo ? "Desactivar conductor" : "Activar conductor"}
+          loadingLabel={conductorToToggle?.activo ? "Desactivando..." : "Activando..."}
+          loading={savingId === conductorToToggle?.id}
+          error={statusError}
+          onClose={handleCloseStatusModal}
+          onConfirm={handleConfirmToggleStatus}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,0 +1,10 @@
+.claude/ export-ignore
+.vscode/ export-ignore
+node_modules/ export-ignore
+backend/node_modules/ export-ignore
+frontend/node_modules/ export-ignore
+artifacts/ export-ignore
+release/ export-ignore
+*.zip export-ignore
+backend/.env export-ignore
+.env export-ignore

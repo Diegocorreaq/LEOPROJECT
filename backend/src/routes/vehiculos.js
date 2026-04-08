@@ -1,9 +1,11 @@
+const { z } = require("zod");
 const express = require("express");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
-const { requireOperaciones } = require("../middleware/rbac");
-const logger = require("../lib/logger");
-const { validate } = require("../lib/validate");
+const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
+const { recordAuditEvent } = require("../lib/audit");
+const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
+const { validate, validateRequest } = require("../lib/validate");
 const {
   createVehiculoSchema,
   updateVehiculoSchema,
@@ -11,11 +13,32 @@ const {
   TIPOS_VEHICULO,
   ESTADOS_VEHICULO,
 } = require("../validators/vehiculos.schema");
+const {
+  booleanQueryField,
+  enumQueryField,
+  idParamSchema,
+  paginationQuerySchema,
+  stringQueryField,
+} = require("../validators/common.schema");
 
 const router = express.Router();
 
 router.use(authMiddleware);
 router.use(requireOperaciones);
+
+const vehiculoBuscarQuerySchema = z.object({
+  texto: stringQueryField("texto", { max: 60 }),
+  tipoUnidad: enumQueryField(TIPOS_UNIDAD, "tipoUnidad"),
+  soloPropio: booleanQueryField("soloPropio"),
+  incluirInactivos: booleanQueryField("incluirInactivos"),
+}).strict();
+
+const vehiculoListQuerySchema = paginationQuerySchema.extend({
+  texto: stringQueryField("texto", { max: 80 }),
+  tipo: enumQueryField(TIPOS_VEHICULO, "tipo"),
+  estado: enumQueryField(ESTADOS_VEHICULO, "estado"),
+  soloPropio: booleanQueryField("soloPropio"),
+}).strict();
 
 async function upsertPropietario(propietario) {
   if (!propietario) return null;
@@ -50,29 +73,22 @@ async function vehiculoTieneServiciosAbiertos(vehiculoId) {
 
 router.get("/buscar", async (req, res, next) => {
   try {
-    const texto = req.query.texto?.trim();
-    const tipoUnidad = req.query.tipoUnidad?.trim().toUpperCase();
-    const soloPropio = req.query.soloPropio === "true";
-    const incluirInactivos = req.query.incluirInactivos === "true";
+    const validated = validateRequest({ query: vehiculoBuscarQuerySchema }, req, res);
+    if (!validated) return;
 
+    const { texto, tipoUnidad, soloPropio, incluirInactivos } = validated.query;
     if (!texto || texto.length < 1) return res.json([]);
 
-    if (tipoUnidad && !TIPOS_UNIDAD.includes(tipoUnidad)) {
-      return res.status(400).json({ error: `tipoUnidad invalido. Valores: ${TIPOS_UNIDAD.join(", ")}` });
-    }
-
-    const where = {
-      OR: [
-        { placa: { contains: texto.toUpperCase(), mode: "insensitive" } },
-        { placaCarreta: { contains: texto.toUpperCase(), mode: "insensitive" } },
-      ],
-      ...(tipoUnidad && { tipoUnidad }),
-      ...(!incluirInactivos && { estado: "ACTIVO" }),
-      ...(soloPropio && { propietarioSubcontratadoId: null, tipo: "PROPIO" }),
-    };
-
     const vehiculos = await prisma.vehiculo.findMany({
-      where,
+      where: {
+        OR: [
+          { placa: { contains: texto.toUpperCase(), mode: "insensitive" } },
+          { placaCarreta: { contains: texto.toUpperCase(), mode: "insensitive" } },
+        ],
+        ...(tipoUnidad && { tipoUnidad }),
+        ...(!incluirInactivos && { estado: "ACTIVO" }),
+        ...(soloPropio && { propietarioSubcontratadoId: null, tipo: "PROPIO" }),
+      },
       include: { propietarioSubcontratado: true },
       take: 10,
       orderBy: { placa: "asc" },
@@ -86,18 +102,11 @@ router.get("/buscar", async (req, res, next) => {
 
 router.get("/", async (req, res, next) => {
   try {
-    const texto = req.query.texto?.trim();
-    const tipo = req.query.tipo?.trim().toUpperCase();
-    const estado = req.query.estado?.trim().toUpperCase();
-    const soloPropio = req.query.soloPropio === "true";
+    const validated = validateRequest({ query: vehiculoListQuerySchema }, req, res);
+    if (!validated) return;
 
-    if (tipo && !TIPOS_VEHICULO.includes(tipo)) {
-      return res.status(400).json({ error: `tipo invalido. Valores: ${TIPOS_VEHICULO.join(", ")}` });
-    }
-
-    if (estado && !ESTADOS_VEHICULO.includes(estado)) {
-      return res.status(400).json({ error: `estado invalido. Valores: ${ESTADOS_VEHICULO.join(", ")}` });
-    }
+    const { texto, tipo, estado, soloPropio } = validated.query;
+    const pagination = resolvePagination(validated.query, { defaultLimit: 100, maxLimit: 100 });
 
     const where = {
       ...(tipo && { tipo }),
@@ -114,15 +123,21 @@ router.get("/", async (req, res, next) => {
       }),
     };
 
-    const vehiculos = await prisma.vehiculo.findMany({
-      where,
-      include: {
-        propietarioSubcontratado: true,
-        _count: { select: { servicios: true, docsVehiculo: true, mantenimientos: true } },
-      },
-      orderBy: { placa: "asc" },
-    });
+    const [total, vehiculos] = await Promise.all([
+      prisma.vehiculo.count({ where }),
+      prisma.vehiculo.findMany({
+        where,
+        include: {
+          propietarioSubcontratado: true,
+          _count: { select: { servicios: true, docsVehiculo: true, mantenimientos: true } },
+        },
+        orderBy: { placa: "asc" },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
 
+    applyPaginationHeaders(res, { ...pagination, total });
     res.json(vehiculos);
   } catch (err) {
     next(err);
@@ -131,9 +146,13 @@ router.get("/", async (req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
+    const vehiculoId = validated.params.id;
     const [vehiculo, serviciosRecientes] = await Promise.all([
       prisma.vehiculo.findUnique({
-        where: { id: req.params.id },
+        where: { id: vehiculoId },
         include: {
           propietarioSubcontratado: true,
           docsVehiculo: true,
@@ -142,7 +161,7 @@ router.get("/:id", async (req, res, next) => {
         },
       }),
       prisma.servicio.findMany({
-        where: { vehiculoId: req.params.id },
+        where: { vehiculoId },
         orderBy: { fechaServicio: "desc" },
         take: 5,
         include: {
@@ -197,7 +216,14 @@ router.post("/", async (req, res, next) => {
       },
     });
 
-    logger.info("Vehiculo creado", { vehiculoId: vehiculo.id, usuarioId: req.user.id });
+    req.log.info("Vehiculo creado", { vehiculoId: vehiculo.id, usuarioId: req.user.id });
+    await recordAuditEvent({
+      entityType: "Vehiculo",
+      entityId: vehiculo.id,
+      action: "create",
+      req,
+      metadata: { placa: vehiculo.placa, tipo: vehiculo.tipo },
+    });
     res.status(201).json(vehiculo);
   } catch (err) {
     next(err);
@@ -206,11 +232,14 @@ router.post("/", async (req, res, next) => {
 
 router.put("/:id", async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const body = validate(updateVehiculoSchema, req.body, res);
     if (!body) return;
 
     const actual = await prisma.vehiculo.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: { propietarioSubcontratado: true },
     });
 
@@ -252,7 +281,7 @@ router.put("/:id", async (req, res, next) => {
     }
 
     const vehiculo = await prisma.vehiculo.update({
-      where: { id: req.params.id },
+      where: { id: actual.id },
       data: {
         ...(body.placa !== undefined && { placa: body.placa }),
         ...(body.placaCarreta !== undefined && { placaCarreta: body.placaCarreta }),
@@ -272,17 +301,28 @@ router.put("/:id", async (req, res, next) => {
       },
     });
 
-    logger.info("Vehiculo actualizado", { vehiculoId: req.params.id, usuarioId: req.user.id });
+    const action = body.estado === "INACTIVO" && actual.estado !== "INACTIVO" ? "deactivate" : "update";
+    req.log.info("Vehiculo actualizado", { vehiculoId: actual.id, usuarioId: req.user.id });
+    await recordAuditEvent({
+      entityType: "Vehiculo",
+      entityId: vehiculo.id,
+      action,
+      req,
+      metadata: { campos: Object.keys(body), estadoAnterior: actual.estado, estadoNuevo: vehiculo.estado },
+    });
     res.json(vehiculo);
   } catch (err) {
     next(err);
   }
 });
 
-router.delete("/:id", async (req, res, next) => {
+router.delete("/:id", requireAdmin, async (req, res, next) => {
   try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
     const vehiculo = await prisma.vehiculo.findUnique({
-      where: { id: req.params.id },
+      where: { id: validated.params.id },
       include: {
         servicios: {
           where: { estado: { in: ["PROGRAMADO", "EN_TRANSITO"] } },
@@ -311,7 +351,7 @@ router.delete("/:id", async (req, res, next) => {
     }
 
     const actualizado = await prisma.vehiculo.update({
-      where: { id: req.params.id },
+      where: { id: vehiculo.id },
       data: { estado: "INACTIVO" },
       include: {
         propietarioSubcontratado: true,
@@ -319,7 +359,14 @@ router.delete("/:id", async (req, res, next) => {
       },
     });
 
-    logger.info("Vehiculo desactivado", { vehiculoId: req.params.id, usuarioId: req.user.id });
+    req.log.info("Vehiculo desactivado", { vehiculoId: vehiculo.id, usuarioId: req.user.id });
+    await recordAuditEvent({
+      entityType: "Vehiculo",
+      entityId: vehiculo.id,
+      action: "deactivate",
+      req,
+      metadata: { placa: vehiculo.placa },
+    });
     res.json({ ok: true, message: "Vehiculo desactivado correctamente.", vehiculo: actualizado });
   } catch (err) {
     next(err);

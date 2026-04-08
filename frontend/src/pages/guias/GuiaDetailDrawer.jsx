@@ -15,6 +15,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import GuiaStatusBadge from "./GuiaStatusBadge";
 import GuiaEditModal from "./GuiaEditModal";
@@ -51,6 +52,8 @@ function Row({ label, value }) {
 
 export default function GuiaDetailDrawer({ guia, onClose, onUpdated, onDeleted }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "ADMIN";
   const [detail, setDetail] = useState(guia);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -222,18 +225,20 @@ export default function GuiaDetailDrawer({ guia, onClose, onUpdated, onDeleted }
                   <ExternalLink className="h-4 w-4" />
                   Ir al servicio
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setUnlinkError("");
-                    setUnlinkOpen(true);
-                  }}
-                  disabled={loading || !detail}
-                >
-                  <Unlink className="h-4 w-4" />
-                  Desvincular
-                </Button>
+                {isAdmin ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setUnlinkError("");
+                      setUnlinkOpen(true);
+                    }}
+                    disabled={loading || !detail}
+                  >
+                    <Unlink className="h-4 w-4" />
+                    Desvincular
+                  </Button>
+                ) : null}
               </>
             ) : (
               <Button
@@ -249,18 +254,20 @@ export default function GuiaDetailDrawer({ guia, onClose, onUpdated, onDeleted }
                 Vincular a servicio
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => {
-                setDeleteError("");
-                setDeleteOpen(true);
-              }}
-              disabled={loading || !detail}
-            >
-              <Trash2 className="h-4 w-4" />
-              Eliminar guia
-            </Button>
+            {isAdmin ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  setDeleteError("");
+                  setDeleteOpen(true);
+                }}
+                disabled={loading || !detail}
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar guia
+              </Button>
+            ) : null}
           </div>
 
           <p className="text-xs leading-5 text-slate-500">
@@ -493,41 +500,45 @@ export default function GuiaDetailDrawer({ guia, onClose, onUpdated, onDeleted }
         />
       )}
 
-      <ConfirmModal
-        open={unlinkOpen}
-        title="Desvincular guia"
-        description={`Esta accion quitara la relacion entre la guia "${detail?.serie ?? ""}-${detail?.numero ?? ""}" y el servicio, pero no eliminara la guia.`}
-        warning="Los bienes, documentos relacionados y datos importados se mantendran intactos."
-        confirmLabel="Desvincular guia"
-        loadingLabel="Desvinculando..."
-        error={unlinkError}
-        loading={unlinkSaving}
-        onClose={() => {
-          if (!unlinkSaving) {
-            setUnlinkOpen(false);
-            setUnlinkError("");
-          }
-        }}
-        onConfirm={handleUnlink}
-      />
+      {isAdmin ? (
+        <ConfirmModal
+          open={unlinkOpen}
+          title="Desvincular guia"
+          description={`Esta accion quitara la relacion entre la guia "${detail?.serie ?? ""}-${detail?.numero ?? ""}" y el servicio, pero no eliminara la guia.`}
+          warning="Los bienes, documentos relacionados y datos importados se mantendran intactos."
+          confirmLabel="Desvincular guia"
+          loadingLabel="Desvinculando..."
+          error={unlinkError}
+          loading={unlinkSaving}
+          onClose={() => {
+            if (!unlinkSaving) {
+              setUnlinkOpen(false);
+              setUnlinkError("");
+            }
+          }}
+          onConfirm={handleUnlink}
+        />
+      ) : null}
 
-      <ConfirmModal
-        open={deleteOpen}
-        title="Eliminar guia"
-        description={`Esta accion eliminara la guia "${detail?.serie ?? ""}-${detail?.numero ?? ""}" y sus datos relacionados.`}
-        warning="No se puede deshacer."
-        confirmLabel="Eliminar guia"
-        loadingLabel="Eliminando..."
-        error={deleteError}
-        loading={deleteSaving}
-        onClose={() => {
-          if (!deleteSaving) {
-            setDeleteOpen(false);
-            setDeleteError("");
-          }
-        }}
-        onConfirm={handleDelete}
-      />
+      {isAdmin ? (
+        <ConfirmModal
+          open={deleteOpen}
+          title="Eliminar guia"
+          description={`Esta accion eliminara la guia "${detail?.serie ?? ""}-${detail?.numero ?? ""}" y sus datos relacionados.`}
+          warning="No se puede deshacer."
+          confirmLabel="Eliminar guia"
+          loadingLabel="Eliminando..."
+          error={deleteError}
+          loading={deleteSaving}
+          onClose={() => {
+            if (!deleteSaving) {
+              setDeleteOpen(false);
+              setDeleteError("");
+            }
+          }}
+          onConfirm={handleDelete}
+        />
+      ) : null}
     </>
   );
 }

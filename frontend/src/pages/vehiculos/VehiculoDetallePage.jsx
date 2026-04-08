@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Pencil, Slash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
 function formatDate(value) {
@@ -24,6 +25,8 @@ function formatNumber(value) {
 export default function VehiculoDetallePage() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "ADMIN";
   const [vehiculo, setVehiculo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -117,10 +120,12 @@ export default function VehiculoDetallePage() {
             <Pencil className="h-4 w-4" />
             Editar
           </Button>
-          <Button variant="outline" onClick={handleOpenStatusModal} disabled={saving}>
-            <Slash className="h-4 w-4" />
-            {saving ? (isActivo ? "Desactivando..." : "Activando...") : isActivo ? "Desactivar" : "Activar"}
-          </Button>
+          {isAdmin ? (
+            <Button variant="outline" onClick={handleOpenStatusModal} disabled={saving}>
+              <Slash className="h-4 w-4" />
+              {saving ? (isActivo ? "Desactivando..." : "Activando...") : isActivo ? "Desactivar" : "Activar"}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -193,20 +198,22 @@ export default function VehiculoDetallePage() {
         </div>
       </div>
 
-      <ConfirmModal
-        open={showStatusModal}
-        title={isActivo ? "Desactivar vehiculo" : "Activar vehiculo"}
-        description={`Seguro que deseas ${isActivo ? "desactivar" : "activar"} el vehiculo "${vehiculo.placa}"?`}
-        warning={isActivo
-          ? "Al desactivarlo, este vehiculo dejara de visualizarse en modulos operativos como servicios."
-          : "Al activarlo, este vehiculo volvera a estar disponible en los demas modulos."}
-        confirmLabel={isActivo ? "Desactivar vehiculo" : "Activar vehiculo"}
-        loadingLabel={isActivo ? "Desactivando..." : "Activando..."}
-        loading={saving}
-        error={statusError}
-        onClose={handleCloseStatusModal}
-        onConfirm={handleToggleStatus}
-      />
+      {isAdmin ? (
+        <ConfirmModal
+          open={showStatusModal}
+          title={isActivo ? "Desactivar vehiculo" : "Activar vehiculo"}
+          description={`Seguro que deseas ${isActivo ? "desactivar" : "activar"} el vehiculo "${vehiculo.placa}"?`}
+          warning={isActivo
+            ? "Al desactivarlo, este vehiculo dejara de visualizarse en modulos operativos como servicios."
+            : "Al activarlo, este vehiculo volvera a estar disponible en los demas modulos."}
+          confirmLabel={isActivo ? "Desactivar vehiculo" : "Activar vehiculo"}
+          loadingLabel={isActivo ? "Desactivando..." : "Activando..."}
+          loading={saving}
+          error={statusError}
+          onClose={handleCloseStatusModal}
+          onConfirm={handleToggleStatus}
+        />
+      ) : null}
     </div>
   );
 }
