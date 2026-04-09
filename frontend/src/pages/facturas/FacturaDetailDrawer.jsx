@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  AlertCircle, ExternalLink, FileText, Link, Link2,
-  Loader2, Pencil, Trash2, Unlink, X,
+  AlertCircle, AlertTriangle, Calendar, ExternalLink,
+  FileText, Link, Link2, Loader2, Pencil, Trash2, Unlink, X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -11,22 +11,13 @@ import { api } from "@/lib/api";
 import FacturaStatusBadge from "./FacturaStatusBadge";
 import FacturaEditModal from "./FacturaEditModal";
 import FacturaVincularModal from "./FacturaVincularModal";
-
-function fechaLarga(iso) {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function fmtNum(val, moneda = "PEN") {
-  if (val == null) return "-";
-  return `${moneda === "USD" ? "$ " : "S/ "}${Number(val).toLocaleString("es-PE", { minimumFractionDigits: 2 })}`;
-}
+import { fechaLarga, fmtTotal, isFacturaVencida, isFacturaPorVencer } from "./facturaHelpers";
 
 function Section({ label, children }) {
   return (
     <div className="space-y-2">
       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-      <div className="space-y-2">{children}</div>
+      <div className="space-y-1.5">{children}</div>
     </div>
   );
 }
@@ -34,8 +25,8 @@ function Section({ label, children }) {
 function Row({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="shrink-0 text-sm text-slate-500">{label}</span>
-      <span className="text-right text-sm text-slate-800">{value ?? "-"}</span>
+      <span className="shrink-0 text-xs text-slate-500">{label}</span>
+      <span className="text-right text-xs text-slate-800">{value ?? "—"}</span>
     </div>
   );
 }
@@ -44,26 +35,27 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.rol === "ADMIN";
-  const [detail, setDetail]         = useState(factura);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState("");
-  const [feedback, setFeedback]     = useState("");
 
-  const [editOpen, setEditOpen]     = useState(false);
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError]   = useState("");
+  const [detail, setDetail]             = useState(factura);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState("");
+  const [feedback, setFeedback]         = useState("");
 
-  const [linkOpen, setLinkOpen]     = useState(false);
-  const [linkSaving, setLinkSaving] = useState(false);
-  const [linkError, setLinkError]   = useState("");
+  const [editOpen, setEditOpen]         = useState(false);
+  const [editSaving, setEditSaving]     = useState(false);
+  const [editError, setEditError]       = useState("");
 
-  const [unlinkOpen, setUnlinkOpen]   = useState(false);
+  const [linkOpen, setLinkOpen]         = useState(false);
+  const [linkSaving, setLinkSaving]     = useState(false);
+  const [linkError, setLinkError]       = useState("");
+
+  const [unlinkOpen, setUnlinkOpen]     = useState(false);
   const [unlinkSaving, setUnlinkSaving] = useState(false);
-  const [unlinkError, setUnlinkError] = useState("");
+  const [unlinkError, setUnlinkError]   = useState("");
 
-  const [deleteOpen, setDeleteOpen]   = useState(false);
+  const [deleteOpen, setDeleteOpen]     = useState(false);
   const [deleteSaving, setDeleteSaving] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
+  const [deleteError, setDeleteError]   = useState("");
 
   useEffect(() => { setDetail(factura); }, [factura]);
 
@@ -126,20 +118,35 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
     finally { setDeleteSaving(false); }
   }
 
-  const servicio = detail?.ordenServicio?.servicio;
-  const moneda = detail?.moneda ?? "PEN";
+  const servicio       = detail?.ordenServicio?.servicio;
+  const moneda         = detail?.moneda ?? "PEN";
+  const vencida        = isFacturaVencida(detail ?? {});
+  const porVencer      = isFacturaPorVencer(detail ?? {});
+  const tieneDetraccion =
+    Number(detail?.detraccionMonto) > 0 || Number(detail?.detraccionPorcentaje) > 0;
 
   return (
     <>
       <div className="flex h-full flex-col">
+
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
           <div>
-            <span className="font-semibold text-slate-900">
+            <span className="text-sm font-semibold text-slate-900">
               {detail?.serie ?? factura?.serie}-{detail?.numero ?? factura?.numero}
             </span>
-            <div className="mt-0.5">
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <FacturaStatusBadge estado={detail?.estadoPago ?? factura?.estadoPago} />
+              {vencida && (
+                <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset bg-red-50 text-red-600 ring-red-200">
+                  <AlertTriangle className="h-2.5 w-2.5" /> Vencida
+                </span>
+              )}
+              {!vencida && porVencer && (
+                <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset bg-amber-50 text-amber-600 ring-amber-200">
+                  <Calendar className="h-2.5 w-2.5" /> Por vencer
+                </span>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100">
@@ -148,132 +155,230 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
         </div>
 
         {/* Acciones */}
-        <div className="shrink-0 space-y-3 border-b px-5 py-4">
+        <div className="shrink-0 border-b px-5 py-3">
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => setEditOpen(true)} disabled={loading || !detail}>
-              <Pencil className="h-4 w-4" />
-              Editar
+              <Pencil className="h-3.5 w-3.5" /> Editar
             </Button>
+
             {detail?.ordenServicioId ? (
               <>
-                <Button size="sm" variant="outline"
-                  onClick={() => navigate(`/servicios/${detail.ordenServicio?.servicio?.id}/editar`)}
-                  disabled={loading || !detail || !detail.ordenServicio?.servicio?.id}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/servicios/${servicio?.id}/editar`)}
+                  disabled={loading || !servicio?.id}
                 >
-                  <ExternalLink className="h-4 w-4" />
-                  Ir al servicio
+                  <ExternalLink className="h-3.5 w-3.5" /> Ir al servicio
                 </Button>
-                {isAdmin ? (
-                  <Button size="sm" variant="outline"
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => { setUnlinkError(""); setUnlinkOpen(true); }}
                     disabled={loading || !detail}
                   >
-                    <Unlink className="h-4 w-4" />
-                    Desvincular
+                    <Unlink className="h-3.5 w-3.5" /> Desvincular
                   </Button>
-                ) : null}
+                )}
               </>
             ) : (
-              <Button size="sm" variant="outline"
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={() => { setLinkError(""); setLinkOpen(true); }}
                 disabled={loading || !detail}
               >
-                <Link2 className="h-4 w-4" />
-                Vincular a servicio
+                <Link2 className="h-3.5 w-3.5" /> Vincular
               </Button>
             )}
-            {isAdmin ? (
-              <Button size="sm" variant="destructive"
+
+            {isAdmin && (
+              <Button
+                size="sm"
+                variant="destructive"
                 onClick={() => { setDeleteError(""); setDeleteOpen(true); }}
                 disabled={loading || !detail}
               >
-                <Trash2 className="h-4 w-4" />
-                Eliminar
+                <Trash2 className="h-3.5 w-3.5" /> Eliminar
               </Button>
-            ) : null}
+            )}
           </div>
         </div>
 
         {error && (
-          <div className="mx-5 mt-3 shrink-0 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+          <div className="mx-5 mt-3 shrink-0 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {error}
           </div>
         )}
         {feedback && (
-          <div className="mx-5 mt-3 shrink-0 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <div className="mx-5 mt-3 shrink-0 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
             {feedback}
           </div>
         )}
 
         {/* Contenido */}
-        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
           {loading && !detail ? (
             <div className="flex h-48 items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
             </div>
           ) : !detail ? (
-            <p className="text-sm text-slate-400">No se pudo cargar la factura.</p>
+            <p className="text-xs text-slate-400">No se pudo cargar la factura.</p>
           ) : (
             <>
-              <Section label="Datos del comprobante">
-                <Row label="Número" value={`${detail.serie}-${detail.numero}`} />
-                <Row label="Tipo" value={detail.tipo} />
-                <Row label="Fecha emisión" value={fechaLarga(detail.fechaEmision)} />
-                <Row label="Fecha vencimiento" value={fechaLarga(detail.fechaVencimiento)} />
-                <Row label="Moneda" value={detail.moneda ?? "PEN"} />
-                <Row label="Origen importación" value={detail.origenImportacion} />
-                {detail.nombreArchivoOrigen && <Row label="Archivo" value={detail.nombreArchivoOrigen} />}
-              </Section>
-
-              <hr />
-
-              <Section label="Estado de pago">
-                <Row label="Estado" value={<FacturaStatusBadge estado={detail.estadoPago} />} />
-                <Row label="Forma de pago" value={detail.formaPago} />
-              </Section>
-
-              <hr />
-
-              <Section label="Cliente">
-                <Row label="Razón social" value={detail.cliente?.razonSocial} />
-                <Row label="RUC" value={detail.cliente?.ruc} />
-              </Section>
-
-              <hr />
-
-              <Section label="Importes">
-                <Row label="Valor venta (neto)" value={fmtNum(detail.montoNeto, moneda)} />
-                <Row label="IGV" value={fmtNum(detail.igv, moneda)} />
-                <Row label="Total" value={
-                  <span className="font-semibold text-slate-900">{fmtNum(detail.total, moneda)}</span>
-                } />
-                {Number(detail.detraccionMonto) > 0 && (
-                  <>
-                    <Row label="Detracción %" value={`${Number(detail.detraccionPorcentaje).toFixed(2)}%`} />
-                    <Row label="Detracción S/." value={fmtNum(detail.detraccionMonto, "PEN")} />
-                  </>
+              {/* 1. Comprobante */}
+              <Section label="Comprobante">
+                <Row label="Número"    value={`${detail.serie}-${detail.numero}`} />
+                <Row label="Tipo"      value={detail.tipo} />
+                <Row label="Emisión"   value={fechaLarga(detail.fechaEmision)} />
+                <Row
+                  label="Vencimiento"
+                  value={
+                    detail.fechaVencimiento ? (
+                      <span className={
+                        vencida ? "font-medium text-red-600" :
+                        porVencer ? "text-amber-600" :
+                        undefined
+                      }>
+                        {fechaLarga(detail.fechaVencimiento)}
+                      </span>
+                    ) : "—"
+                  }
+                />
+                <Row label="Moneda"  value={detail.moneda ?? "PEN"} />
+                <Row label="Origen"  value={detail.origenImportacion} />
+                {detail.nombreArchivoOrigen && (
+                  <Row
+                    label="Archivo"
+                    value={
+                      <span
+                        className="block max-w-[160px] truncate text-right"
+                        title={detail.nombreArchivoOrigen}
+                      >
+                        {detail.nombreArchivoOrigen}
+                      </span>
+                    }
+                  />
                 )}
               </Section>
 
-              <hr />
+              <hr className="border-slate-100" />
 
+              {/* 2. Cobranza */}
+              <Section label="Cobranza">
+                <Row label="Estado"     value={<FacturaStatusBadge estado={detail.estadoPago} />} />
+                <Row label="Forma pago" value={detail.formaPago ?? "—"} />
+                <div className="mt-1 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Neto</span>
+                    <span className="text-slate-700">{fmtTotal(detail.montoNeto, moneda)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">IGV</span>
+                    <span className="text-slate-700">{fmtTotal(detail.igv, moneda)}</span>
+                  </div>
+                  <div className="mt-1 flex justify-between border-t border-slate-200 pt-1.5 text-xs">
+                    <span className="font-semibold text-slate-700">Total</span>
+                    <span className="font-semibold text-slate-900">{fmtTotal(detail.total, moneda)}</span>
+                  </div>
+                </div>
+              </Section>
+
+              <hr className="border-slate-100" />
+
+              {/* 3. Cliente */}
+              <Section label="Cliente">
+                <Row label="Razón social" value={detail.cliente?.razonSocial} />
+                <Row label="RUC"          value={detail.cliente?.ruc} />
+              </Section>
+
+              {/* 4. Detracción — solo si aplica */}
+              {tieneDetraccion && (
+                <>
+                  <hr className="border-slate-100" />
+                  <Section label="Detracción">
+                    <Row
+                      label="Porcentaje"
+                      value={`${Number(detail.detraccionPorcentaje ?? 0).toFixed(2)}%`}
+                    />
+                    <Row label="Monto" value={fmtTotal(detail.detraccionMonto, "PEN")} />
+                  </Section>
+                </>
+              )}
+
+              <hr className="border-slate-100" />
+
+              {/* 5. Operación */}
+              <Section label="Operación">
+                {servicio ? (
+                  <div className="space-y-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-medium text-slate-800">
+                        {servicio.origen} → {servicio.destino}
+                      </p>
+                      {servicio.vehiculo?.placa && (
+                        <span className="shrink-0 rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[10px] text-slate-700">
+                          {servicio.vehiculo.placa}
+                        </span>
+                      )}
+                    </div>
+                    {servicio.fechaServicio && (
+                      <p className="text-[11px] text-slate-500">{fechaLarga(servicio.fechaServicio)}</p>
+                    )}
+                    {(servicio.clientes ?? []).length > 0 && (
+                      <p className="text-[11px] text-slate-500">
+                        {servicio.clientes.map((sc) => sc.cliente.razonSocial).join(", ")}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => navigate(`/servicios/${servicio.id}/editar`)}
+                      className="mt-0.5 flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Ver servicio
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-red-200 bg-red-50/40 px-3 py-2.5">
+                    <Link className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
+                    <div>
+                      <p className="text-xs font-medium text-red-600">Sin servicio vinculado</p>
+                      <p className="mt-0.5 text-[11px] text-red-400">
+                        {(detail.guias?.length ?? 0) > 0
+                          ? "Hay guías detectadas, pero sin servicio asignado."
+                          : "Vincula esta factura a un servicio de transporte."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </Section>
+
+              <hr className="border-slate-100" />
+
+              {/* 6. Guías relacionadas */}
               <Section label={`Guías relacionadas (${detail.guias?.length ?? 0})`}>
                 {detail.guias?.length > 0 ? (
                   <div className="space-y-1.5">
                     {detail.guias.map((g, i) => (
-                      <div key={g.id ?? i} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                      <div
+                        key={g.id ?? i}
+                        className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2"
+                      >
                         <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                        <span className="text-xs font-medium text-slate-700">{g.serieGuia}-{g.numeroGuia}</span>
+                        <span className="font-mono text-xs text-slate-700">
+                          {g.serieGuia}-{g.numeroGuia}
+                        </span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-400">Sin guías relacionadas registradas.</p>
+                  <p className="text-xs text-slate-400">Sin guías relacionadas registradas.</p>
                 )}
               </Section>
 
-              <hr />
+              <hr className="border-slate-100" />
 
+              {/* 7. Pagos */}
               <Section label={`Pagos (${detail.pagos?.length ?? 0})`}>
                 {detail.pagos?.length > 0 ? (
                   <div className="space-y-1.5">
@@ -281,39 +386,16 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
                       <div key={p.id ?? i} className="rounded-lg bg-slate-50 px-3 py-2 text-xs">
                         <div className="flex justify-between">
                           <span className="text-slate-500">{fechaLarga(p.fechaPago)}</span>
-                          <span className="font-medium text-slate-800">{fmtNum(p.monto, moneda)}</span>
+                          <span className="font-medium text-slate-800">{fmtTotal(p.monto, moneda)}</span>
                         </div>
-                        {p.medioPago && <p className="text-slate-400 mt-0.5">{p.medioPago}</p>}
+                        {p.medioPago && (
+                          <p className="mt-0.5 text-slate-400">{p.medioPago}</p>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-400">Sin pagos registrados.</p>
-                )}
-              </Section>
-
-              <hr />
-
-              <Section label="Servicio vinculado">
-                {servicio ? (
-                  <div className="rounded-lg bg-slate-50 px-3 py-2.5 space-y-1">
-                    <p className="text-sm font-medium text-slate-700">
-                      {servicio.origen} → {servicio.destino}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {fechaLarga(servicio.fechaServicio)} · {servicio.vehiculo?.placa ?? "-"}
-                    </p>
-                    {(servicio.clientes ?? []).length > 0 && (
-                      <p className="text-xs text-slate-500">
-                        {servicio.clientes.map((sc) => sc.cliente.razonSocial).join(", ")}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-sm text-red-500">
-                    <Link className="h-3.5 w-3.5" />
-                    Sin vincular
-                  </div>
+                  <p className="text-xs text-slate-400">Sin pagos registrados.</p>
                 )}
               </Section>
             </>
@@ -343,35 +425,35 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
         />
       )}
 
-      {isAdmin ? (
-      <ConfirmModal
-        open={unlinkOpen}
-        title="Desvincular factura"
-        description={`Esto quitará la relación entre la factura "${detail?.serie}-${detail?.numero}" y el servicio. La orden no será eliminada.`}
-        warning="No se eliminarán datos financieros del servicio."
-        confirmLabel="Desvincular"
-        loadingLabel="Desvinculando..."
-        error={unlinkError}
-        loading={unlinkSaving}
-        onClose={() => { if (!unlinkSaving) { setUnlinkOpen(false); setUnlinkError(""); } }}
-        onConfirm={handleUnlink}
-      />
-      ) : null}
+      {isAdmin && (
+        <ConfirmModal
+          open={unlinkOpen}
+          title="Desvincular factura"
+          description={`Esto quitará la relación entre la factura "${detail?.serie}-${detail?.numero}" y el servicio. La orden no será eliminada.`}
+          warning="No se eliminarán datos financieros del servicio."
+          confirmLabel="Desvincular"
+          loadingLabel="Desvinculando..."
+          error={unlinkError}
+          loading={unlinkSaving}
+          onClose={() => { if (!unlinkSaving) { setUnlinkOpen(false); setUnlinkError(""); } }}
+          onConfirm={handleUnlink}
+        />
+      )}
 
-      {isAdmin ? (
-      <ConfirmModal
-        open={deleteOpen}
-        title="Eliminar factura"
-        description={`Se eliminará la factura "${detail?.serie}-${detail?.numero}" junto con sus guías relacionadas y pagos.`}
-        warning="Esta acción no se puede deshacer."
-        confirmLabel="Eliminar factura"
-        loadingLabel="Eliminando..."
-        error={deleteError}
-        loading={deleteSaving}
-        onClose={() => { if (!deleteSaving) { setDeleteOpen(false); setDeleteError(""); } }}
-        onConfirm={handleDelete}
-      />
-      ) : null}
+      {isAdmin && (
+        <ConfirmModal
+          open={deleteOpen}
+          title="Eliminar factura"
+          description={`Se eliminará la factura "${detail?.serie}-${detail?.numero}" junto con sus guías relacionadas y pagos.`}
+          warning="Esta acción no se puede deshacer."
+          confirmLabel="Eliminar factura"
+          loadingLabel="Eliminando..."
+          error={deleteError}
+          loading={deleteSaving}
+          onClose={() => { if (!deleteSaving) { setDeleteOpen(false); setDeleteError(""); } }}
+          onConfirm={handleDelete}
+        />
+      )}
     </>
   );
 }

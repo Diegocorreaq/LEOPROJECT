@@ -204,14 +204,11 @@ export default function ServicioSuggestionList({ guiaId, onSelect, selectedId })
                     )}
                   </div>
 
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    {isSelected && <CheckCircle className="h-4 w-4 text-white" />}
-                    {servicio.score > 0 && (
-                      <span className={cn("text-xs font-semibold", isSelected ? "text-slate-300" : "text-slate-400")}>
-                        {servicio.score}pts
-                      </span>
-                    )}
-                  </div>
+                  {isSelected && (
+                    <div className="shrink-0">
+                      <CheckCircle className="h-4 w-4 text-white" />
+                    </div>
+                  )}
                 </div>
               </button>
             );

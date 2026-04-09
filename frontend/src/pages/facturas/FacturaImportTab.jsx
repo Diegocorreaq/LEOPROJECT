@@ -252,6 +252,16 @@ export default function FacturaImportTab({ onImported }) {
           </div>
 
           {/* Guías relacionadas */}
+          {(factura?.formaPago || factura?.fechaVencimiento) && (
+            <Section label="Condiciones de pago">
+              <Row label="Forma de pago" value={factura?.formaPago} />
+              <Row
+                label="Fecha vencimiento"
+                value={factura?.fechaVencimiento ? new Date(factura.fechaVencimiento).toLocaleDateString("es-PE") : null}
+              />
+            </Section>
+          )}
+
           {factura?.guias?.length > 0 && (
             <Section label={`Guías relacionadas (${factura.guias.length})`}>
               <div className="flex flex-wrap gap-2">

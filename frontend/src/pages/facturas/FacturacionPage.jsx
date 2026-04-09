@@ -5,17 +5,42 @@ import { api } from "@/lib/api";
 import FacturaListTab from "./FacturaListTab";
 import FacturaImportTab from "./FacturaImportTab";
 import FacturaBulkImportTab from "./FacturaBulkImportTab";
+import { isFacturaVencida } from "./facturaHelpers";
 
 const TABS = [
-  { key: "lista",   label: "Lista",               icon: FileText },
-  { key: "importar", label: "Importar",            icon: Upload },
-  { key: "masivo",  label: "Importación masiva",   icon: PackageOpen },
+  { key: "lista",    label: "Lista",             icon: FileText },
+  { key: "importar", label: "Importar",           icon: Upload },
+  { key: "masivo",   label: "Importación masiva", icon: PackageOpen },
 ];
 
+function KpiCard({ label, value, highlight }) {
+  const hasValue = value > 0;
+  return (
+    <div className={cn(
+      "flex flex-col items-start rounded-lg border px-3 py-2 min-w-[88px]",
+      highlight === "red"   && hasValue ? "border-red-100 bg-red-50"     : "",
+      highlight === "amber" && hasValue ? "border-amber-100 bg-amber-50" : "",
+      highlight === "blue"  && hasValue ? "border-blue-100 bg-blue-50"   : "",
+      (!highlight || !hasValue)         ? "border-slate-100 bg-slate-50" : "",
+    )}>
+      <span className={cn(
+        "text-lg font-semibold leading-none tabular-nums",
+        highlight === "red"   && hasValue ? "text-red-700"   : "",
+        highlight === "amber" && hasValue ? "text-amber-700" : "",
+        highlight === "blue"  && hasValue ? "text-blue-700"  : "",
+        (!highlight || !hasValue)         ? "text-slate-700" : "",
+      )}>
+        {value}
+      </span>
+      <span className="mt-1 text-[11px] leading-tight text-slate-500">{label}</span>
+    </div>
+  );
+}
+
 export default function FacturacionPage() {
-  const [tab, setTab]         = useState("lista");
+  const [tab, setTab]           = useState("lista");
   const [facturas, setFacturas] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]   = useState(true);
   const [feedback, setFeedback] = useState("");
 
   function loadFacturas() {
@@ -50,29 +75,22 @@ export default function FacturacionPage() {
     setFeedback(message || "Factura eliminada");
   }
 
-  const sinVincular = useMemo(() => facturas.filter((f) => !f.ordenServicioId).length, [facturas]);
-  const pendientes  = useMemo(() => facturas.filter((f) => f.estadoPago === "PENDIENTE").length, [facturas]);
+  const kpis = useMemo(() => ({
+    total:         facturas.length,
+    sinVincular:   facturas.filter((f) => !f.ordenServicioId).length,
+    pendientes:    facturas.filter((f) => f.estadoPago === "PENDIENTE").length,
+    credito:       facturas.filter((f) => f.formaPago === "CREDITO").length,
+    vencidas:      facturas.filter(isFacturaVencida).length,
+    conDetraccion: facturas.filter(
+      (f) => Number(f.detraccionMonto) > 0 || Number(f.detraccionPorcentaje) > 0
+    ).length,
+  }), [facturas]);
 
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-8 py-5">
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-xl font-semibold text-slate-900">Facturación</h1>
-          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500">
-            {facturas.length} en total
-          </span>
-          {sinVincular > 0 && (
-            <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-600">
-              {sinVincular} sin vincular
-            </span>
-          )}
-          {pendientes > 0 && (
-            <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-600">
-              {pendientes} pendientes de pago
-            </span>
-          )}
-        </div>
+        <h1 className="text-xl font-semibold text-slate-900">Facturación</h1>
 
         <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
           {TABS.map((item) => (
@@ -90,6 +108,20 @@ export default function FacturacionPage() {
           ))}
         </div>
       </div>
+
+      {/* KPI strip — visible solo en pestaña lista */}
+      {tab === "lista" && !loading && facturas.length > 0 && (
+        <div className="shrink-0 border-b bg-slate-50/50 px-8 py-3">
+          <div className="flex flex-wrap gap-2.5">
+            <KpiCard label="Total facturas"  value={kpis.total} />
+            <KpiCard label="Sin vincular"    value={kpis.sinVincular}   highlight="red" />
+            <KpiCard label="Pendientes"      value={kpis.pendientes}    highlight="amber" />
+            <KpiCard label="Crédito"         value={kpis.credito}       highlight="blue" />
+            <KpiCard label="Vencidas"        value={kpis.vencidas}      highlight="red" />
+            <KpiCard label="Con detracción"  value={kpis.conDetraccion} highlight="blue" />
+          </div>
+        </div>
+      )}
 
       {feedback && tab === "lista" && (
         <div className="border-b border-emerald-100 bg-emerald-50 px-8 py-3 text-sm text-emerald-700">

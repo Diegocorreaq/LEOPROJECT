@@ -74,4 +74,26 @@ function resolveImportFile(fileBuffer, originalName) {
   );
 }
 
-module.exports = { resolveImportFile };
+function resolveZipXmlEntries(zipBuffer, zipName) {
+  let zip;
+  try {
+    zip = new AdmZip(zipBuffer);
+  } catch {
+    throw new Error(`El archivo ZIP "${zipName}" no pudo ser leido o esta dañado.`);
+  }
+
+  const entries = zip
+    .getEntries()
+    .filter((entry) => !entry.isDirectory && entry.entryName.toLowerCase().endsWith(".xml"));
+
+  if (entries.length === 0) {
+    throw new Error(`El ZIP "${zipName}" no contiene archivos XML validos.`);
+  }
+
+  return entries.map((entry) => ({
+    buffer: entry.getData(),
+    filename: entry.entryName,
+  }));
+}
+
+module.exports = { resolveImportFile, resolveZipXmlEntries };

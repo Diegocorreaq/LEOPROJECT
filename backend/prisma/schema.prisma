@@ -88,22 +88,41 @@ model RutaTarifa {
   ordenes     OrdenServicio[]
 }
 
+model Ubigeo {
+  codigo             String     @id
+  distrito           String
+  provinciaCodigo    String?    @map("provincia_codigo")
+  provincia           String
+  departamentoCodigo String?    @map("departamento_codigo")
+  departamento        String
+  etiqueta           String
+  busqueda           String
+  serviciosOrigen    Servicio[] @relation("ServicioOrigenUbigeo")
+  serviciosDestino   Servicio[] @relation("ServicioDestinoUbigeo")
+
+  @@map("ubigeo")
+}
+
 model Servicio {
-  id            String            @id @default(uuid())
-  vehiculoId    String
-  vehiculo      Vehiculo          @relation(fields: [vehiculoId], references: [id])
-  conductorId   String
-  conductor     Conductor         @relation(fields: [conductorId], references: [id])
-  fechaServicio DateTime
-  origen        String
-  destino       String
-  estado        String            @default("PROGRAMADO")
-  observaciones String?
-  createdAt     DateTime          @default(now())
-  clientes      ServicioCliente[]
-  guias         GuiaRemision[]
-  liquidacion   Liquidacion?
-  orden         OrdenServicio?
+  id                 String    @id @default(uuid())
+  vehiculoId         String
+  vehiculo           Vehiculo  @relation(fields: [vehiculoId], references: [id])
+  conductorId        String
+  conductor          Conductor @relation(fields: [conductorId], references: [id])
+  fechaServicio      DateTime
+  origen             String
+  destino            String
+  origenUbigeoCodigo String?
+  destinoUbigeoCodigo String?
+  origenUbigeo       Ubigeo?   @relation("ServicioOrigenUbigeo", fields: [origenUbigeoCodigo], references: [codigo])
+  destinoUbigeo      Ubigeo?   @relation("ServicioDestinoUbigeo", fields: [destinoUbigeoCodigo], references: [codigo])
+  estado             String    @default("PROGRAMADO")
+  observaciones      String?
+  createdAt          DateTime  @default(now())
+  clientes           ServicioCliente[]
+  guias              GuiaRemision[]
+  liquidacion        Liquidacion?
+  orden              OrdenServicio?
 }
 
 model ServicioCliente {

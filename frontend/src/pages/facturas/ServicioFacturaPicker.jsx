@@ -142,17 +142,11 @@ export default function ServicioFacturaPicker({ facturaId, onSelect, selectedId 
                         </div>
                       )}
                     </div>
-                    <div className="shrink-0 flex flex-col items-end gap-1">
-                      {s.score != null && (
-                        <span className={cn(
-                          "rounded-full px-2.5 py-0.5 text-xs font-bold",
-                          isSelected ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                        )}>
-                          {s.score} pts
-                        </span>
-                      )}
-                      {isSelected && <CheckCircle2 className="h-4 w-4 text-white" />}
-                    </div>
+                    {isSelected && (
+                      <div className="shrink-0">
+                        <CheckCircle2 className="h-4 w-4 text-white" />
+                      </div>
+                    )}
                   </div>
                 </button>
               );

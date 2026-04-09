@@ -12,6 +12,7 @@ const TIPOS_CONTRATO = ["PROPIO", "SUBCONTRATADO"];
 const ESTADOS_SERVICIO = ["PROGRAMADO", "EN_TRANSITO", "COMPLETADO", "CANCELADO"];
 const TIPOS_UNIDAD = ["CAMION", "TRACTO", "FURGON", "PLATAFORMA", "VOLQUETE", "CISTERNA", "OTRO"];
 const TIPOS_DOCUMENTO = ["DNI", "RUC", "CE", "PASAPORTE"];
+const UBIGEO_REGEX = /^\d{6}$/;
 
 const empresaSubSchema = z.object({
   razonSocial: z.string().trim().min(2).max(300),
@@ -45,6 +46,8 @@ const baseServicioShape = {
   fechaServicio: z.string({ required_error: "fechaServicio es requerida" }).trim().min(1, "fechaServicio es requerida"),
   origen: z.string({ required_error: "origen es requerido" }).trim().min(2).max(300),
   destino: z.string({ required_error: "destino es requerido" }).trim().min(2).max(300),
+  origenUbigeoCodigo: z.string({ required_error: "origenUbigeoCodigo es requerido" }).trim().regex(UBIGEO_REGEX, "origenUbigeoCodigo debe tener 6 digitos"),
+  destinoUbigeoCodigo: z.string({ required_error: "destinoUbigeoCodigo es requerido" }).trim().regex(UBIGEO_REGEX, "destinoUbigeoCodigo debe tener 6 digitos"),
   estado: z.enum(ESTADOS_SERVICIO).default("PROGRAMADO"),
   observaciones: z.string().trim().max(2000).optional().nullable(),
   tipoContrato: z.enum(TIPOS_CONTRATO, {
@@ -123,6 +126,8 @@ const updateServicioSchema = z
     fechaServicio: baseServicioShape.fechaServicio.optional(),
     origen: baseServicioShape.origen.optional(),
     destino: baseServicioShape.destino.optional(),
+    origenUbigeoCodigo: baseServicioShape.origenUbigeoCodigo.optional(),
+    destinoUbigeoCodigo: baseServicioShape.destinoUbigeoCodigo.optional(),
     estado: baseServicioShape.estado.optional(),
     observaciones: baseServicioShape.observaciones,
     tipoContrato: baseServicioShape.tipoContrato.optional(),
@@ -140,6 +145,22 @@ const updateServicioSchema = z
   .superRefine((data, ctx) => {
     if (data.tipoContrato) {
       enforceServicioRules(data, ctx, { requireAtLeastOneClient: false, partial: true });
+    }
+
+    if (data.origen !== undefined && !data.origenUbigeoCodigo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "origenUbigeoCodigo es requerido cuando actualizas el origen.",
+        path: ["origenUbigeoCodigo"],
+      });
+    }
+
+    if (data.destino !== undefined && !data.destinoUbigeoCodigo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "destinoUbigeoCodigo es requerido cuando actualizas el destino.",
+        path: ["destinoUbigeoCodigo"],
+      });
     }
 
     if (data.subcontratado && data.tipoContrato && data.tipoContrato !== "SUBCONTRATADO") {

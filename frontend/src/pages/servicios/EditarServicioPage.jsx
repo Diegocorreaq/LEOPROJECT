@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import ClienteBlock from "@/components/servicios/ClienteBlock";
 import PlacaAutocomplete from "@/components/servicios/PlacaAutocomplete";
 import ConductorAutocomplete from "@/components/servicios/ConductorAutocomplete";
+import UbigeoAutocomplete from "@/components/servicios/UbigeoAutocomplete";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -52,6 +53,16 @@ function buildForm(s) {
       observaciones: s.observaciones ?? "",
       origen:        s.origen ?? "",
       destino:       s.destino ?? "",
+      origenUbigeoCodigo: s.origenUbigeoCodigo ?? "",
+      destinoUbigeoCodigo: s.destinoUbigeoCodigo ?? "",
+      _origenUbigeo: s.origenUbigeo ?? null,
+      _destinoUbigeo: s.destinoUbigeo ?? null,
+      _origenBaseText: s.origen ?? "",
+      _destinoBaseText: s.destino ?? "",
+      _origenBaseCodigo: s.origenUbigeoCodigo ?? "",
+      _destinoBaseCodigo: s.destinoUbigeoCodigo ?? "",
+      _origenBaseUbigeo: s.origenUbigeo ?? null,
+      _destinoBaseUbigeo: s.destinoUbigeo ?? null,
       tipoContrato,
       vehiculoId:    s.vehiculoId ?? "",
       conductorId:   s.conductorId ?? "",
@@ -76,6 +87,16 @@ function buildForm(s) {
       observaciones: s.observaciones ?? "",
       origen:        s.origen ?? "",
       destino:       s.destino ?? "",
+      origenUbigeoCodigo: s.origenUbigeoCodigo ?? "",
+      destinoUbigeoCodigo: s.destinoUbigeoCodigo ?? "",
+      _origenUbigeo: s.origenUbigeo ?? null,
+      _destinoUbigeo: s.destinoUbigeo ?? null,
+      _origenBaseText: s.origen ?? "",
+      _destinoBaseText: s.destino ?? "",
+      _origenBaseCodigo: s.origenUbigeoCodigo ?? "",
+      _destinoBaseCodigo: s.destinoUbigeoCodigo ?? "",
+      _origenBaseUbigeo: s.origenUbigeo ?? null,
+      _destinoBaseUbigeo: s.destinoUbigeo ?? null,
       tipoContrato,
       vehiculoId:    "",
       conductorId:   "",
@@ -191,6 +212,48 @@ export default function EditarServicioPage() {
     }));
   }
 
+  function handleOrigenTextChange(text) {
+    setForm(f => {
+      const restoreBase = text === f._origenBaseText;
+      return {
+        ...f,
+        origen: text,
+        origenUbigeoCodigo: restoreBase ? f._origenBaseCodigo : "",
+        _origenUbigeo: restoreBase ? f._origenBaseUbigeo : null,
+      };
+    });
+  }
+
+  function handleDestinoTextChange(text) {
+    setForm(f => {
+      const restoreBase = text === f._destinoBaseText;
+      return {
+        ...f,
+        destino: text,
+        destinoUbigeoCodigo: restoreBase ? f._destinoBaseCodigo : "",
+        _destinoUbigeo: restoreBase ? f._destinoBaseUbigeo : null,
+      };
+    });
+  }
+
+  function handleSelectOrigen(ubigeo) {
+    setForm(f => ({
+      ...f,
+      origen: `${ubigeo.distrito} - ${ubigeo.departamento}`,
+      origenUbigeoCodigo: ubigeo.codigo,
+      _origenUbigeo: ubigeo,
+    }));
+  }
+
+  function handleSelectDestino(ubigeo) {
+    setForm(f => ({
+      ...f,
+      destino: `${ubigeo.distrito} - ${ubigeo.departamento}`,
+      destinoUbigeoCodigo: ubigeo.codigo,
+      _destinoUbigeo: ubigeo,
+    }));
+  }
+
   // ── Callbacks ClienteBlock ────────────────────────────────────────────────
 
   const handleConfirmCliente = useCallback((key, data) => {
@@ -227,10 +290,12 @@ export default function EditarServicioPage() {
 
   const esPropio = form.tipoContrato === "PROPIO";
   const clientesConfirmados = bloques.filter(b => b.confirmed !== null);
+  const origenValido = !!form.origen.trim() && (!!form.origenUbigeoCodigo || (!form._origenBaseCodigo && form.origen === form._origenBaseText));
+  const destinoValido = !!form.destino.trim() && (!!form.destinoUbigeoCodigo || (!form._destinoBaseCodigo && form.destino === form._destinoBaseText));
 
   const checks = {
     fecha:     !!form.fechaServicio,
-    ruta:      !!form.origen.trim() && !!form.destino.trim(),
+    ruta:      origenValido && destinoValido,
     cliente:   clientesConfirmados.length > 0,
     contrato:  true,
     vehiculo:  esPropio ? !!form.vehiculoId : !!form.sub.vehiculo.placa.trim(),
@@ -250,16 +315,26 @@ export default function EditarServicioPage() {
     setSaveError("");
     try {
       const clienteIds = clientesConfirmados.map(b => b.confirmed.clienteId);
+      const origenChanged = form.origen !== form._origenBaseText || form.origenUbigeoCodigo !== form._origenBaseCodigo;
+      const destinoChanged = form.destino !== form._destinoBaseText || form.destinoUbigeoCodigo !== form._destinoBaseCodigo;
 
       const payload = {
         fechaServicio: form.fechaServicio,
-        origen:        form.origen,
-        destino:       form.destino,
         estado:        form.estado,
         observaciones: form.observaciones || null,
         tipoContrato:  form.tipoContrato,
         clienteIds,
       };
+
+      if (origenChanged) {
+        payload.origen = form.origen;
+        payload.origenUbigeoCodigo = form.origenUbigeoCodigo;
+      }
+
+      if (destinoChanged) {
+        payload.destino = form.destino;
+        payload.destinoUbigeoCodigo = form.destinoUbigeoCodigo;
+      }
 
       if (esPropio) {
         payload.vehiculoId  = form.vehiculoId;
@@ -353,12 +428,24 @@ export default function EditarServicioPage() {
           <FormCard title="Ruta">
             <div className="grid grid-cols-2 gap-4">
               <Field label="Origen" required>
-                <Input placeholder="Ej. Callao, Lima" value={form.origen}
-                  onChange={e => upd("origen", e.target.value)} />
+                <UbigeoAutocomplete
+                  value={form.origen}
+                  onChange={handleOrigenTextChange}
+                  onSelect={handleSelectOrigen}
+                  placeholder="Buscar origen por distrito o departamento..."
+                  mustSelect={!!form._origenBaseCodigo || form.origen !== form._origenBaseText}
+                  isValidated={!!form.origenUbigeoCodigo}
+                />
               </Field>
               <Field label="Destino" required>
-                <Input placeholder="Ej. Arequipa" value={form.destino}
-                  onChange={e => upd("destino", e.target.value)} />
+                <UbigeoAutocomplete
+                  value={form.destino}
+                  onChange={handleDestinoTextChange}
+                  onSelect={handleSelectDestino}
+                  placeholder="Buscar destino por distrito o departamento..."
+                  mustSelect={!!form._destinoBaseCodigo || form.destino !== form._destinoBaseText}
+                  isValidated={!!form.destinoUbigeoCodigo}
+                />
               </Field>
             </div>
           </FormCard>

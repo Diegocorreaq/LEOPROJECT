@@ -71,6 +71,7 @@ app.use("/api/servicios", require("./routes/servicios"));
 app.use("/api/vehiculos", require("./routes/vehiculos"));
 app.use("/api/conductores", require("./routes/conductores"));
 app.use("/api/clientes", require("./routes/clientes"));
+app.use("/api/ubigeos", require("./routes/ubigeos"));
 app.use("/api/guias", require("./routes/guias"));
 app.use("/api/liquidaciones", require("./routes/liquidaciones"));
 app.use("/api/facturas", require("./routes/facturas"));

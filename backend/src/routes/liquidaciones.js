@@ -4,6 +4,7 @@ const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
 const { recordAuditEvent } = require("../lib/audit");
+const { placasCoinciden } = require("../lib/normalizePlaca");
 const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
 const { validate, validateRequest } = require("../lib/validate");
 const {
@@ -232,11 +233,7 @@ function scoreServicio(servicio, referencia) {
   let score = 0;
   const razones = [];
 
-  if (
-    referencia.vehiculo?.placa &&
-    servicio.vehiculo?.placa &&
-    referencia.vehiculo.placa.toUpperCase() === servicio.vehiculo.placa.toUpperCase()
-  ) {
+  if (placasCoinciden(referencia.vehiculo?.placa, servicio.vehiculo?.placa)) {
     score += 35;
     razones.push("Misma placa");
   }

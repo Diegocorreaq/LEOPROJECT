@@ -17,10 +17,20 @@ const router = express.Router();
 router.use(authMiddleware);
 router.use(requireOperaciones);
 
+const ubigeoSelect = {
+  codigo: true,
+  distrito: true,
+  provincia: true,
+  departamento: true,
+  etiqueta: true,
+};
+
 const servicioDetailInclude = {
   vehiculo: { include: { propietarioSubcontratado: true } },
   conductor: { include: { propietarioSubcontratado: true } },
   clientes: { include: { cliente: true } },
+  origenUbigeo: { select: ubigeoSelect },
+  destinoUbigeo: { select: ubigeoSelect },
   guias: true,
   liquidacion: true,
   orden: true,
@@ -30,6 +40,8 @@ const servicioListInclude = {
   vehiculo: { select: { id: true, placa: true, placaCarreta: true, tipo: true, tipoUnidad: true } },
   conductor: { select: { id: true, nombre: true, apPaterno: true, apMaterno: true, nroDocumento: true } },
   clientes: { include: { cliente: true } },
+  origenUbigeo: { select: ubigeoSelect },
+  destinoUbigeo: { select: ubigeoSelect },
   guias: { select: { id: true } },
   liquidacion: { select: { id: true, status: true } },
   orden: { select: { id: true, rutaTarifaId: true } },
@@ -52,6 +64,10 @@ function addServiceCodes(servicios) {
 
 function getTipoContrato(servicio) {
   return servicio?.vehiculo?.tipo === "SUBCONTRATADO" ? "SUBCONTRATADO" : "PROPIO";
+}
+
+function formatUbigeoDisplay(ubigeo) {
+  return `${ubigeo.distrito} - ${ubigeo.departamento}`;
 }
 
 async function validarRecursosPropiosActivos(db, { vehiculoId, conductorId }) {
@@ -142,6 +158,35 @@ async function resolveSubcontratadoResources(db, subcontratado) {
   return {
     vehiculoId: vehiculo.id,
     conductorId: conductor.id,
+  };
+}
+
+async function resolveUbigeoByCodigo(db, codigo, fieldName) {
+  const ubigeo = await db.ubigeo.findUnique({
+    where: { codigo },
+    select: ubigeoSelect,
+  });
+
+  if (!ubigeo) {
+    const error = new Error(`El ${fieldName} seleccionado no existe en el maestro de ubigeo.`);
+    error.status = 400;
+    throw error;
+  }
+
+  return ubigeo;
+}
+
+async function resolveServicioUbigeos(db, payload) {
+  const [origenUbigeo, destinoUbigeo] = await Promise.all([
+    resolveUbigeoByCodigo(db, payload.origenUbigeoCodigo, "origen"),
+    resolveUbigeoByCodigo(db, payload.destinoUbigeoCodigo, "destino"),
+  ]);
+
+  return {
+    origenUbigeo,
+    destinoUbigeo,
+    origen: formatUbigeoDisplay(origenUbigeo),
+    destino: formatUbigeoDisplay(destinoUbigeo),
   };
 }
 
@@ -314,11 +359,15 @@ router.post("/", async (req, res, next) => {
         conductorId = resources.conductorId;
       }
 
+      const ruta = await resolveServicioUbigeos(tx, body);
+
       return tx.servicio.create({
         data: {
           fechaServicio: new Date(body.fechaServicio),
-          origen: body.origen,
-          destino: body.destino,
+          origen: ruta.origen,
+          destino: ruta.destino,
+          origenUbigeoCodigo: ruta.origenUbigeo.codigo,
+          destinoUbigeoCodigo: ruta.destinoUbigeo.codigo,
           estado: body.estado,
           observaciones: body.observaciones ?? null,
           vehiculoId,
@@ -366,6 +415,8 @@ router.put("/:id", async (req, res, next) => {
         vehiculo: { include: { propietarioSubcontratado: true } },
         conductor: { include: { propietarioSubcontratado: true } },
         clientes: true,
+        origenUbigeo: { select: ubigeoSelect },
+        destinoUbigeo: { select: ubigeoSelect },
       },
     });
 
@@ -374,11 +425,17 @@ router.put("/:id", async (req, res, next) => {
     }
 
     const tipoContratoFinal = body.tipoContrato ?? (existing.vehiculo?.tipo === "SUBCONTRATADO" ? "SUBCONTRATADO" : "PROPIO");
+    const origenActualizado = body.origen !== undefined || body.origenUbigeoCodigo !== undefined;
+    const destinoActualizado = body.destino !== undefined || body.destinoUbigeoCodigo !== undefined;
 
     const servicio = await prisma.$transaction(async (tx) => {
       let finalVehiculoId = existing.vehiculoId;
       let finalConductorId = existing.conductorId;
       let finalClienteIds = existing.clientes.map((item) => item.clienteId);
+      let finalOrigen = existing.origen;
+      let finalDestino = existing.destino;
+      let finalOrigenUbigeoCodigo = existing.origenUbigeoCodigo ?? null;
+      let finalDestinoUbigeoCodigo = existing.destinoUbigeoCodigo ?? null;
 
       if (body.clienteIds || body.clientes) {
         finalClienteIds = await resolveClienteIds(tx, body);
@@ -408,6 +465,30 @@ router.put("/:id", async (req, res, next) => {
         throw error;
       }
 
+      if (origenActualizado) {
+        if (!body.origenUbigeoCodigo) {
+          const error = new Error("Debes seleccionar un ubigeo valido para el origen.");
+          error.status = 400;
+          throw error;
+        }
+
+        const origenUbigeo = await resolveUbigeoByCodigo(tx, body.origenUbigeoCodigo, "origen");
+        finalOrigenUbigeoCodigo = origenUbigeo.codigo;
+        finalOrigen = formatUbigeoDisplay(origenUbigeo);
+      }
+
+      if (destinoActualizado) {
+        if (!body.destinoUbigeoCodigo) {
+          const error = new Error("Debes seleccionar un ubigeo valido para el destino.");
+          error.status = 400;
+          throw error;
+        }
+
+        const destinoUbigeo = await resolveUbigeoByCodigo(tx, body.destinoUbigeoCodigo, "destino");
+        finalDestinoUbigeoCodigo = destinoUbigeo.codigo;
+        finalDestino = formatUbigeoDisplay(destinoUbigeo);
+      }
+
       await tx.servicioCliente.deleteMany({ where: { servicioId: existing.id } });
       if (finalClienteIds.length > 0) {
         await tx.servicioCliente.createMany({
@@ -422,8 +503,14 @@ router.put("/:id", async (req, res, next) => {
         where: { id: existing.id },
         data: {
           ...(body.fechaServicio !== undefined && { fechaServicio: new Date(body.fechaServicio) }),
-          ...(body.origen !== undefined && { origen: body.origen }),
-          ...(body.destino !== undefined && { destino: body.destino }),
+          ...(origenActualizado && {
+            origen: finalOrigen,
+            origenUbigeoCodigo: finalOrigenUbigeoCodigo,
+          }),
+          ...(destinoActualizado && {
+            destino: finalDestino,
+            destinoUbigeoCodigo: finalDestinoUbigeoCodigo,
+          }),
           ...(body.estado !== undefined && { estado: body.estado }),
           ...(body.observaciones !== undefined && { observaciones: body.observaciones }),
           vehiculoId: finalVehiculoId,

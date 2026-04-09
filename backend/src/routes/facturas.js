@@ -154,6 +154,28 @@ async function insertGuiasRelacionadas(tx, facturaId, guiasRelacionadas) {
   }
 }
 
+function buildFacturaCreateData({ extracted, clienteId, origenImportacion, nombreArchivoOrigen }) {
+  return {
+    clienteId,
+    serie: extracted.serie,
+    numero: extracted.numero,
+    tipo: extracted.tipo ?? "FACTURA",
+    fechaEmision: new Date(extracted.fechaEmision),
+    fechaVencimiento: extracted.fechaVencimiento ? new Date(extracted.fechaVencimiento) : null,
+    moneda: extracted.moneda ?? "PEN",
+    montoNeto: extracted.montoNeto ?? 0,
+    igv: extracted.igv ?? 0,
+    total: extracted.total ?? 0,
+    detraccionPorcentaje: extracted.detraccionPorcentaje ?? 0,
+    detraccionMonto: extracted.detraccionMonto ?? 0,
+    formaPago: extracted.formaPago ?? null,
+    origenImportacion,
+    nombreArchivoOrigen,
+    rawPayload: extracted,
+    estadoPago: "PENDIENTE",
+  };
+}
+
 // ── Helper: importar un XML individual (reutilizable en masivo) ───────────────
 async function importarUnXml(buffer, filename) {
   let extracted;
@@ -200,25 +222,12 @@ async function importarUnXml(buffer, filename) {
   try {
     factura = await prisma.$transaction(async (tx) => {
       const created = await tx.factura.create({
-        data: {
+        data: buildFacturaCreateData({
+          extracted,
           clienteId: cliente.id,
-          serie,
-          numero,
-          tipo: extracted.tipo ?? "FACTURA",
-          fechaEmision: new Date(extracted.fechaEmision),
-          fechaVencimiento: extracted.fechaVencimiento ? new Date(extracted.fechaVencimiento) : null,
-          moneda: extracted.moneda ?? "PEN",
-          montoNeto: extracted.montoNeto ?? 0,
-          igv: extracted.igv ?? 0,
-          total: extracted.total ?? 0,
-          detraccionPorcentaje: extracted.detraccionPorcentaje ?? 0,
-          detraccionMonto: extracted.detraccionMonto ?? 0,
-          formaPago: extracted.formaPago ?? null,
           origenImportacion: "XML",
           nombreArchivoOrigen: filename,
-          rawPayload: extracted,
-          estadoPago: "PENDIENTE",
-        },
+        }),
       });
 
       await insertGuiasRelacionadas(tx, created.id, extracted.guiasRelacionadas);
@@ -286,18 +295,30 @@ router.get("/", async (req, res, next) => {
           numero: true,
           tipo: true,
           fechaEmision: true,
+          fechaVencimiento: true,
           total: true,
+          moneda: true,
           estadoPago: true,
+          formaPago: true,
+          detraccionMonto: true,
+          detraccionPorcentaje: true,
           ordenServicioId: true,
           origenImportacion: true,
           cliente: { select: { id: true, razonSocial: true, ruc: true } },
           ordenServicio: {
             select: {
               id: true,
-              servicio: { select: { id: true, origen: true, destino: true } },
+              servicio: {
+                select: {
+                  id: true,
+                  origen: true,
+                  destino: true,
+                  vehiculo: { select: { placa: true } },
+                },
+              },
             },
           },
-          _count: { select: { guias: true } },
+          guias: { select: { serieGuia: true, numeroGuia: true } },
         },
         orderBy: [{ fechaEmision: "desc" }, { createdAt: "desc" }],
         skip: pagination.skip,
@@ -308,8 +329,7 @@ router.get("/", async (req, res, next) => {
     const result = facturas.map((f) => ({
       ...f,
       numeroCompleto: `${f.serie}-${f.numero}`,
-      cantidadGuias: f._count.guias,
-      _count: undefined,
+      cantidadGuias: f.guias.length,
     }));
 
     applyPaginationHeaders(res, { ...pagination, total });
@@ -570,31 +590,21 @@ router.post("/importar", upload.single("file"), async (req, res, next) => {
     // 5. Guardar en transacción
     const factura = await prisma.$transaction(async (tx) => {
       const created = await tx.factura.create({
-        data: {
+        data: buildFacturaCreateData({
+          extracted,
           clienteId: cliente.id,
-          serie,
-          numero,
-          tipo: extracted.tipo ?? "FACTURA",
-          fechaEmision: new Date(extracted.fechaEmision),
-          fechaVencimiento: extracted.fechaVencimiento ? new Date(extracted.fechaVencimiento) : null,
-          moneda: extracted.moneda ?? "PEN",
-          montoNeto: extracted.montoNeto ?? 0,
-          igv: extracted.igv ?? 0,
-          total: extracted.total ?? 0,
-          detraccionPorcentaje: extracted.detraccionPorcentaje ?? 0,
-          detraccionMonto: extracted.detraccionMonto ?? 0,
-          formaPago: extracted.formaPago ?? null,
           origenImportacion: resolved.sourceType,
           nombreArchivoOrigen: resolved.filename,
-          rawPayload: extracted,
-          estadoPago: "PENDIENTE",
-        },
-        include: facturaInclude,
+        }),
+        select: { id: true },
       });
 
       await insertGuiasRelacionadas(tx, created.id, extracted.guiasRelacionadas);
 
-      return created;
+      return tx.factura.findUnique({
+        where: { id: created.id },
+        include: facturaInclude,
+      });
     });
 
     req.log.info("Factura importada", {

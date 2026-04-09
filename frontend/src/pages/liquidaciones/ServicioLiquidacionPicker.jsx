@@ -19,7 +19,7 @@ function ServiceSummaryCard({ servicio, selected = false }) {
         selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white",
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
             <Truck className={cn("h-3.5 w-3.5", selected ? "text-slate-300" : "text-slate-400")} />
@@ -58,11 +58,6 @@ function ServiceSummaryCard({ servicio, selected = false }) {
             </div>
           )}
         </div>
-        {typeof servicio.score === "number" && servicio.score > 0 && (
-          <span className={cn("text-xs font-semibold", selected ? "text-slate-300" : "text-slate-400")}>
-            {servicio.score} pts
-          </span>
-        )}
       </div>
     </div>
   );

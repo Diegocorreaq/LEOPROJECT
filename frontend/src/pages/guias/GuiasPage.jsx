@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Upload } from "lucide-react";
+import { FileText, PackageOpen, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import GuiaListTab from "./GuiaListTab";
+import GuiaBulkImportTab from "./GuiaBulkImportTab";
 import GuiaImportTab from "./GuiaImportTab";
 
 const TABS = [
   { key: "lista", label: "Lista", icon: FileText },
   { key: "importar", label: "Importar", icon: Upload },
+  { key: "masivo", label: "Importacion masiva", icon: PackageOpen },
 ];
 
 export default function GuiasPage() {
@@ -16,26 +18,20 @@ export default function GuiasPage() {
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
 
-  useEffect(() => {
-    let active = true;
-
+  function loadGuias(options = {}) {
+    const { withLoading = true } = options;
+    if (withLoading) {
+      setLoading(true);
+    }
     api
       .get("/guias")
-      .then((data) => {
-        if (active) {
-          setGuias(data);
-        }
-      })
+      .then(setGuias)
       .catch(() => {})
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
+      .finally(() => setLoading(false));
+  }
 
-    return () => {
-      active = false;
-    };
+  useEffect(() => {
+    loadGuias({ withLoading: false });
   }, []);
 
   function handleImported(nuevaGuia) {
@@ -44,6 +40,12 @@ export default function GuiasPage() {
       setFeedback("");
     }
     setTab("lista");
+  }
+
+  function handleMasivoImported() {
+    loadGuias();
+    setTab("lista");
+    setFeedback("Importación masiva completada. Lista actualizada.");
   }
 
   function handleGuiaUpdated(guiaActualizada) {
@@ -117,9 +119,13 @@ export default function GuiasPage() {
           onGuiaUpdated={handleGuiaUpdated}
           onGuiaDeleted={handleGuiaDeleted}
         />
-      ) : (
+      ) : tab === "importar" ? (
         <div className="flex-1 overflow-y-auto">
           <GuiaImportTab onImported={handleImported} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          <GuiaBulkImportTab onImported={handleMasivoImported} />
         </div>
       )}
     </div>

@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import ClienteBlock from "@/components/servicios/ClienteBlock";
 import PlacaAutocomplete from "@/components/servicios/PlacaAutocomplete";
 import ConductorAutocomplete from "@/components/servicios/ConductorAutocomplete";
+import UbigeoAutocomplete from "@/components/servicios/UbigeoAutocomplete";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -40,6 +41,10 @@ const INIT_FORM = {
   observaciones:  "",
   origen:         "",
   destino:        "",
+  origenUbigeoCodigo: "",
+  destinoUbigeoCodigo: "",
+  _origenUbigeo:  null,
+  _destinoUbigeo: null,
   tipoContrato:   "PROPIO",
   vehiculoId:      "",
   conductorId:     "",
@@ -116,6 +121,42 @@ export default function NuevoServicioPage() {
     }));
   }
 
+  function handleOrigenTextChange(text) {
+    setForm(f => ({
+      ...f,
+      origen: text,
+      origenUbigeoCodigo: "",
+      _origenUbigeo: null,
+    }));
+  }
+
+  function handleDestinoTextChange(text) {
+    setForm(f => ({
+      ...f,
+      destino: text,
+      destinoUbigeoCodigo: "",
+      _destinoUbigeo: null,
+    }));
+  }
+
+  function handleSelectOrigen(ubigeo) {
+    setForm(f => ({
+      ...f,
+      origen: `${ubigeo.distrito} - ${ubigeo.departamento}`,
+      origenUbigeoCodigo: ubigeo.codigo,
+      _origenUbigeo: ubigeo,
+    }));
+  }
+
+  function handleSelectDestino(ubigeo) {
+    setForm(f => ({
+      ...f,
+      destino: `${ubigeo.distrito} - ${ubigeo.departamento}`,
+      destinoUbigeoCodigo: ubigeo.codigo,
+      _destinoUbigeo: ubigeo,
+    }));
+  }
+
   // ── Callbacks para ClienteBlock ───────────────────────────────────────────────
 
   const handleConfirmCliente = useCallback((key, data) => {
@@ -141,7 +182,7 @@ export default function NuevoServicioPage() {
 
   const checks = {
     fecha:     !!form.fechaServicio,
-    ruta:      !!form.origen.trim() && !!form.destino.trim(),
+    ruta:      !!form.origen.trim() && !!form.destino.trim() && !!form.origenUbigeoCodigo && !!form.destinoUbigeoCodigo,
     cliente:   clientesConfirmados.length > 0,
     contrato:  true,
     vehiculo:  esPropio ? !!form.vehiculoId : !!form.sub.vehiculo.placa.trim(),
@@ -166,6 +207,8 @@ export default function NuevoServicioPage() {
         fechaServicio: form.fechaServicio,
         origen:        form.origen,
         destino:       form.destino,
+        origenUbigeoCodigo: form.origenUbigeoCodigo,
+        destinoUbigeoCodigo: form.destinoUbigeoCodigo,
         estado:        form.estado,
         observaciones: form.observaciones || null,
         tipoContrato:  form.tipoContrato,
@@ -262,12 +305,24 @@ export default function NuevoServicioPage() {
           <FormCard title="Ruta">
             <div className="grid grid-cols-2 gap-4">
               <Field label="Origen" required>
-                <Input placeholder="Ej. Callao, Lima" value={form.origen}
-                  onChange={e => upd("origen", e.target.value)} />
+                <UbigeoAutocomplete
+                  value={form.origen}
+                  onChange={handleOrigenTextChange}
+                  onSelect={handleSelectOrigen}
+                  placeholder="Buscar origen por distrito o departamento..."
+                  mustSelect
+                  isValidated={!!form.origenUbigeoCodigo}
+                />
               </Field>
               <Field label="Destino" required>
-                <Input placeholder="Ej. Arequipa" value={form.destino}
-                  onChange={e => upd("destino", e.target.value)} />
+                <UbigeoAutocomplete
+                  value={form.destino}
+                  onChange={handleDestinoTextChange}
+                  onSelect={handleSelectDestino}
+                  placeholder="Buscar destino por distrito o departamento..."
+                  mustSelect
+                  isValidated={!!form.destinoUbigeoCodigo}
+                />
               </Field>
             </div>
           </FormCard>
@@ -338,6 +393,7 @@ export default function NuevoServicioPage() {
                         placeholder="T3U-947"
                         soloPropio
                         mustSelect
+                        isValidated={!!form.vehiculoId}
                       />
                     </Field>
                     <Field label="Placa carreta">
@@ -367,14 +423,15 @@ export default function NuevoServicioPage() {
                 <div className="space-y-3">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Conductor</p>
                   <Field label="Conductor" required>
-                    <ConductorAutocomplete
-                      value={form._conductorText}
-                      onChange={handleConductorTextChange}
-                      onSelect={selConductor}
-                      placeholder="Buscar por nombre o documento..."
-                      soloPropio
-                      mustSelect
-                    />
+                      <ConductorAutocomplete
+                        value={form._conductorText}
+                        onChange={handleConductorTextChange}
+                        onSelect={selConductor}
+                        placeholder="Buscar por nombre o documento..."
+                        soloPropio
+                        mustSelect
+                        isValidated={!!form.conductorId}
+                      />
                     {form._conductor && (
                       <p className="mt-1.5 text-xs text-slate-500">
                         {form._conductor.tipoDocumento} {form._conductor.nroDocumento}

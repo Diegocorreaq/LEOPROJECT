@@ -20,6 +20,7 @@ const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
 const { recordAuditEvent } = require("../lib/audit");
+const { normalizePlaca, placasCoinciden } = require("../lib/normalizePlaca");
 const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
 const { validate, validateRequest } = require("../lib/validate");
 const {
@@ -37,7 +38,7 @@ const {
   stringQueryField,
   uuidQueryField,
 } = require("../validators/common.schema");
-const { resolveImportFile } = require("../modules/guias/resolveImportFile");
+const { resolveImportFile, resolveZipXmlEntries } = require("../modules/guias/resolveImportFile");
 const { parseXmlGuia } = require("../modules/guias/parseXmlGuia");
 const { parsePdfGuia } = require("../modules/guias/parsePdfGuia");
 const { normalizeSerieNumero } = require("../modules/guias/normalizeGuia");
@@ -65,6 +66,15 @@ const upload = multer({
   },
 });
 
+const uploadMasivo = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.(xml|zip)$/i.test(file.originalname)) return cb(null, true);
+    cb(new Error("Importacion masiva solo acepta archivos .xml o .zip con XML."));
+  },
+});
+
 // ── Include estándar para queries ──────────────────────────────────────────────
 const guiaInclude = {
   bienes: true,
@@ -77,6 +87,154 @@ const guiaInclude = {
     },
   },
 };
+
+function buildGuiaCreateData(extracted, { origenImportacion, nombreArchivoOrigen }) {
+  return {
+    serie: extracted.serie,
+    numero: extracted.numero,
+    fechaEmision: new Date(extracted.fechaEmision),
+    horaEmision: extracted.horaEmision ?? null,
+    fechaInicioTraslado: extracted.fechaInicioTraslado
+      ? new Date(extracted.fechaInicioTraslado)
+      : null,
+    puntoDeSalida: extracted.puntoDeSalida ?? null,
+    puntoDeLlegada: extracted.puntoDeLlegada ?? null,
+    remitenteNombre: extracted.remitenteNombre ?? null,
+    remitenteRuc: extracted.remitenteRuc ?? null,
+    destinatarioNombre: extracted.destinatarioNombre ?? null,
+    destinatarioRuc: extracted.destinatarioRuc ?? null,
+    pagadorFleteNombre: extracted.pagadorFleteNombre ?? null,
+    pagadorFleteRuc: extracted.pagadorFleteRuc ?? null,
+    transportistaNombre: extracted.transportistaNombre ?? null,
+    transportistaRuc: extracted.transportistaRuc ?? null,
+    placaPrincipal: extracted.placaPrincipal ?? null,
+    placaSecundaria: extracted.placaSecundaria ?? null,
+    conductorPrincipalNombre: extracted.conductorPrincipalNombre ?? null,
+    conductorPrincipalDocumento: extracted.conductorPrincipalDocumento ?? null,
+    conductorPrincipalLicencia: extracted.conductorPrincipalLicencia ?? null,
+    pesoBrutoTotal: extracted.pesoBrutoTotal ?? null,
+    unidadPeso: extracted.unidadPeso ?? null,
+    mtcNumero: extracted.mtcNumero ?? null,
+    subcontratistaNombre: extracted.subcontratistaNombre ?? null,
+    subcontratistaRuc: extracted.subcontratistaRuc ?? null,
+    transbordo: extracted.transbordo ?? false,
+    retornoVacio: extracted.retornoVacio ?? false,
+    subcontratado: extracted.subcontratado ?? false,
+    observacionSunat: extracted.observacionSunat ?? null,
+    origenImportacion,
+    nombreArchivoOrigen,
+    rawPayload: extracted,
+    estado: "EMITIDA",
+    servicioId: null,
+    bienes: {
+      create: (extracted.bienes ?? []).map((bien) => ({
+        descripcion: bien.descripcion,
+        cantidad: bien.cantidad ?? null,
+        unidadMedida: bien.unidadMedida ?? null,
+      })),
+    },
+    docsRelacionados: {
+      create: (extracted.docsRelacionados ?? []).map((doc) => ({
+        tipoDocumentoCode: doc.tipoDocumentoCode ?? null,
+        tipoDocumento: doc.tipoDocumento ?? "DOCUMENTO",
+        numeroDocumento: doc.numeroDocumento,
+        rucEmisor: doc.rucEmisor ?? null,
+      })),
+    },
+  };
+}
+
+async function existeVehiculoEnFlotaPorPlacas(placas = []) {
+  const placasNormalizadas = placas.map((placa) => normalizePlaca(placa)).filter(Boolean);
+  if (placasNormalizadas.length === 0) return false;
+
+  const vehiculos = await prisma.vehiculo.findMany({
+    select: { placa: true, placaCarreta: true },
+  });
+
+  return vehiculos.some((vehiculo) =>
+    placasNormalizadas.some(
+      (placa) => placasCoinciden(vehiculo.placa, placa) || placasCoinciden(vehiculo.placaCarreta, placa),
+    ),
+  );
+}
+
+async function importarUnaGuiaXml(buffer, filename) {
+  let extracted;
+  try {
+    extracted = parseXmlGuia(buffer);
+  } catch (err) {
+    return { ok: false, error: err.message, filename };
+  }
+
+  const { serie, numero } = normalizeSerieNumero(extracted.idCompleto);
+
+  if (!serie || !numero) {
+    return {
+      ok: false,
+      error: "No se pudo determinar la serie y numero de la guia desde el XML.",
+      filename,
+    };
+  }
+
+  if (!extracted.fechaEmision) {
+    return {
+      ok: false,
+      error: "No se pudo determinar la fecha de emision de la guia.",
+      filename,
+    };
+  }
+
+  const existing = await prisma.guiaRemision.findUnique({
+    where: { serie_numero: { serie, numero } },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return {
+      ok: false,
+      duplicado: true,
+      error: `Guía ${serie}-${numero} ya existe.`,
+      filename,
+      guiaId: existing.id,
+    };
+  }
+
+  try {
+    const created = await prisma.guiaRemision.create({
+      data: buildGuiaCreateData(
+        { ...extracted, serie, numero },
+        { origenImportacion: "XML", nombreArchivoOrigen: filename },
+      ),
+      include: guiaInclude,
+    });
+
+    return {
+      ok: true,
+      filename,
+      serie,
+      numero,
+      guiaId: created.id,
+    };
+  } catch (err) {
+    if (err?.code === "P2002") {
+      const duplicate = await prisma.guiaRemision.findUnique({
+        where: { serie_numero: { serie, numero } },
+        select: { id: true },
+      });
+
+      return {
+        ok: false,
+        duplicado: true,
+        error: `Guía ${serie}-${numero} ya existe.`,
+        filename,
+        guiaId: duplicate?.id ?? null,
+      };
+    }
+
+    throw err;
+  }
+}
 
 // ── GET /api/guias ─────────────────────────────────────────────────────────────
 router.get("/", async (req, res, next) => {
@@ -231,71 +389,18 @@ router.post("/importar", upload.single("file"), async (req, res, next) => {
     }
 
     // 5. Verificar si la placa está en flota (informativo, no bloquea)
-    let vehiculoEnFlota = false;
-    if (extracted.placaPrincipal) {
-      const veh = await prisma.vehiculo.findUnique({
-        where: { placa: extracted.placaPrincipal },
-        select: { id: true },
-      });
-      vehiculoEnFlota = !!veh;
-    }
+    const vehiculoEnFlota = await existeVehiculoEnFlotaPorPlacas([
+      extracted.placaPrincipal,
+      extracted.placaSecundaria,
+    ]);
 
     // 6. Guardar en transacción
     const guia = await prisma.$transaction(async (tx) => {
       const created = await tx.guiaRemision.create({
-        data: {
-          serie,
-          numero,
-          fechaEmision: new Date(extracted.fechaEmision),
-          horaEmision: extracted.horaEmision ?? null,
-          fechaInicioTraslado: extracted.fechaInicioTraslado
-            ? new Date(extracted.fechaInicioTraslado)
-            : null,
-          puntoDeSalida: extracted.puntoDeSalida ?? null,
-          puntoDeLlegada: extracted.puntoDeLlegada ?? null,
-          remitenteNombre: extracted.remitenteNombre ?? null,
-          remitenteRuc: extracted.remitenteRuc ?? null,
-          destinatarioNombre: extracted.destinatarioNombre ?? null,
-          destinatarioRuc: extracted.destinatarioRuc ?? null,
-          pagadorFleteNombre: extracted.pagadorFleteNombre ?? null,
-          pagadorFleteRuc: extracted.pagadorFleteRuc ?? null,
-          transportistaNombre: extracted.transportistaNombre ?? null,
-          transportistaRuc: extracted.transportistaRuc ?? null,
-          placaPrincipal: extracted.placaPrincipal ?? null,
-          placaSecundaria: extracted.placaSecundaria ?? null,
-          conductorPrincipalNombre: extracted.conductorPrincipalNombre ?? null,
-          conductorPrincipalDocumento: extracted.conductorPrincipalDocumento ?? null,
-          conductorPrincipalLicencia: extracted.conductorPrincipalLicencia ?? null,
-          pesoBrutoTotal: extracted.pesoBrutoTotal ?? null,
-          unidadPeso: extracted.unidadPeso ?? null,
-          mtcNumero: extracted.mtcNumero ?? null,
-          subcontratistaNombre: extracted.subcontratistaNombre ?? null,
-          subcontratistaRuc: extracted.subcontratistaRuc ?? null,
-          transbordo: extracted.transbordo ?? false,
-          retornoVacio: extracted.retornoVacio ?? false,
-          subcontratado: extracted.subcontratado ?? false,
-          observacionSunat: extracted.observacionSunat ?? null,
-          origenImportacion: resolved.sourceType,
-          nombreArchivoOrigen: resolved.filename,
-          rawPayload: extracted,
-          estado: "EMITIDA",
-          servicioId: null,
-          bienes: {
-            create: (extracted.bienes ?? []).map((b) => ({
-              descripcion: b.descripcion,
-              cantidad: b.cantidad ?? null,
-              unidadMedida: b.unidadMedida ?? null,
-            })),
-          },
-          docsRelacionados: {
-            create: (extracted.docsRelacionados ?? []).map((d) => ({
-              tipoDocumentoCode: d.tipoDocumentoCode ?? null,
-              tipoDocumento: d.tipoDocumento ?? "DOCUMENTO",
-              numeroDocumento: d.numeroDocumento,
-              rucEmisor: d.rucEmisor ?? null,
-            })),
-          },
-        },
+        data: buildGuiaCreateData(
+          { ...extracted, serie, numero },
+          { origenImportacion: resolved.sourceType, nombreArchivoOrigen: resolved.filename },
+        ),
         include: guiaInclude,
       });
       return created;
@@ -335,6 +440,125 @@ router.post("/importar", upload.single("file"), async (req, res, next) => {
 });
 
 // ── PATCH /api/guias/:id/vincular ──────────────────────────────────────────────
+router.post("/importar-masivo", uploadMasivo.array("files", 50), async (req, res, next) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No se recibieron archivos." });
+    }
+
+    const xmlEntries = [];
+    const detalle = [];
+
+    for (const file of req.files) {
+      const ext = file.originalname.split(".").pop().toLowerCase();
+
+      if (ext === "xml") {
+        xmlEntries.push({ buffer: file.buffer, filename: file.originalname });
+        continue;
+      }
+
+      if (ext === "zip") {
+        try {
+          const entries = resolveZipXmlEntries(file.buffer, file.originalname);
+          xmlEntries.push(...entries);
+        } catch (err) {
+          detalle.push({
+            filename: file.originalname,
+            estado: "error",
+            mensaje: err.message,
+          });
+        }
+      }
+    }
+
+    if (xmlEntries.length === 0) {
+      return res.status(400).json({
+        error: detalle[0]?.mensaje || "No se encontraron archivos XML validos en la carga.",
+      });
+    }
+
+    const totalRecibidos = xmlEntries.length;
+    let importados = 0;
+    let duplicados = 0;
+    let fallidos = detalle.length;
+
+    for (const entry of xmlEntries) {
+      try {
+        const result = await importarUnaGuiaXml(entry.buffer, entry.filename);
+
+        if (result.ok) {
+          importados++;
+          detalle.push({
+            filename: result.filename,
+            estado: "importado",
+            mensaje: `Guía ${result.serie}-${result.numero} importada correctamente.`,
+            serie: result.serie,
+            numero: result.numero,
+            guiaId: result.guiaId,
+          });
+          continue;
+        }
+
+        if (result.duplicado) {
+          duplicados++;
+          detalle.push({
+            filename: result.filename,
+            estado: "duplicado",
+            mensaje: result.error,
+            guiaId: result.guiaId ?? null,
+          });
+          continue;
+        }
+
+        fallidos++;
+        detalle.push({
+          filename: result.filename,
+          estado: "error",
+          mensaje: result.error || "No se pudo procesar el XML.",
+        });
+      } catch (err) {
+        fallidos++;
+        req.log.error("Error en importacion masiva de guia", {
+          filename: entry.filename,
+          error: err.message,
+          usuarioId: req.user.id,
+        });
+        detalle.push({
+          filename: entry.filename,
+          estado: "error",
+          mensaje: "Error interno al procesar el archivo.",
+        });
+      }
+    }
+
+    req.log.info("Importacion masiva de guias completada", {
+      totalRecibidos,
+      importados,
+      duplicados,
+      fallidos,
+      usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "GuiaRemisionImport",
+      entityId: "bulk",
+      action: "bulk_import",
+      req,
+      metadata: { totalRecibidos, importados, duplicados, fallidos },
+    });
+
+    res.json({
+      message: "Importación masiva completada.",
+      totalRecibidos,
+      importados,
+      duplicados,
+      fallidos,
+      detalle,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch("/:id", async (req, res, next) => {
   try {
     const validated = validateRequest({ params: idParamSchema }, req, res);
@@ -652,10 +876,7 @@ router.get("/:id/sugerencias-servicio", async (req, res, next) => {
       const razones = [];
 
       // Placa principal
-      if (
-        guia.placaPrincipal &&
-        servicio.vehiculo?.placa?.toUpperCase() === guia.placaPrincipal.toUpperCase()
-      ) {
+      if (placasCoinciden(servicio.vehiculo?.placa, guia.placaPrincipal)) {
         pts += 40;
         razones.push("Misma placa");
       }
