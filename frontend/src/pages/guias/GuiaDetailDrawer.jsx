@@ -225,20 +225,18 @@ export default function GuiaDetailDrawer({ guia, onClose, onUpdated, onDeleted }
                   <ExternalLink className="h-4 w-4" />
                   Ir al servicio
                 </Button>
-                {isAdmin ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setUnlinkError("");
-                      setUnlinkOpen(true);
-                    }}
-                    disabled={loading || !detail}
-                  >
-                    <Unlink className="h-4 w-4" />
-                    Desvincular
-                  </Button>
-                ) : null}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setUnlinkError("");
+                    setUnlinkOpen(true);
+                  }}
+                  disabled={loading || !detail}
+                >
+                  <Unlink className="h-4 w-4" />
+                  Desvincular
+                </Button>
               </>
             ) : (
               <Button
@@ -500,8 +498,7 @@ export default function GuiaDetailDrawer({ guia, onClose, onUpdated, onDeleted }
         />
       )}
 
-      {isAdmin ? (
-        <ConfirmModal
+      <ConfirmModal
           open={unlinkOpen}
           title="Desvincular guia"
           description={`Esta accion quitara la relacion entre la guia "${detail?.serie ?? ""}-${detail?.numero ?? ""}" y el servicio, pero no eliminara la guia.`}
@@ -518,7 +515,6 @@ export default function GuiaDetailDrawer({ guia, onClose, onUpdated, onDeleted }
           }}
           onConfirm={handleUnlink}
         />
-      ) : null}
 
       {isAdmin ? (
         <ConfirmModal

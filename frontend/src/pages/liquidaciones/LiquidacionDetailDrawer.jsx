@@ -3,9 +3,11 @@ import {
   AlertCircle,
   ArrowRightLeft,
   ExternalLink,
+  Link2,
   Loader2,
   Pencil,
   Trash2,
+  Unlink,
   X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -59,6 +61,9 @@ export default function LiquidacionDetailDrawer({
   const [feedback, setFeedback] = useState("");
   const [statusValue, setStatusValue] = useState("PENDIENTE");
   const [savingStatus, setSavingStatus] = useState(false);
+  const [unlinkOpen, setUnlinkOpen] = useState(false);
+  const [unlinkSaving, setUnlinkSaving] = useState(false);
+  const [unlinkError, setUnlinkError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -127,6 +132,24 @@ export default function LiquidacionDetailDrawer({
     }
   }
 
+  async function handleUnlink() {
+    setUnlinkSaving(true);
+    setUnlinkError("");
+    setError("");
+
+    try {
+      const updated = await api.patch(`/liquidaciones/${liquidacionId}/desvincular`, {});
+      setDetail(updated);
+      setFeedback(updated.message || "Liquidacion desvinculada correctamente");
+      setUnlinkOpen(false);
+      onUpdated?.(updated);
+    } catch (err) {
+      setUnlinkError(err.message || "No se pudo desvincular la liquidacion.");
+    } finally {
+      setUnlinkSaving(false);
+    }
+  }
+
   return (
     <>
       <div className="flex h-full flex-col">
@@ -155,7 +178,7 @@ export default function LiquidacionDetailDrawer({
               <Pencil className="h-4 w-4" />
               Editar liquidacion
             </Button>
-            {isAdmin ? (
+            {detail?.servicioId && isAdmin ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -164,16 +187,38 @@ export default function LiquidacionDetailDrawer({
                 <ArrowRightLeft className="h-4 w-4" />
                 Reasignar servicio
               </Button>
-            ) : null}
-            {detail?.servicioId ? (
+            ) : !detail?.servicioId ? (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => navigate(`/servicios/${detail.servicioId}/editar`)}
+                onClick={() => onEdit?.(liquidacionId, { focusService: true })}
               >
-                <ExternalLink className="h-4 w-4" />
-                Abrir servicio
+                <Link2 className="h-4 w-4" />
+                Vincular servicio
               </Button>
+            ) : null}
+            {detail?.servicioId ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/servicios/${detail.servicioId}/editar`)}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Abrir servicio
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setUnlinkError("");
+                    setUnlinkOpen(true);
+                  }}
+                >
+                  <Unlink className="h-4 w-4" />
+                  Desvincular
+                </Button>
+              </>
             ) : null}
             {isAdmin ? (
               <Button
@@ -221,10 +266,18 @@ export default function LiquidacionDetailDrawer({
           ) : (
             <>
               <Section label="Servicio">
-                <Row label="Referencia" value={getServicioReferencia(detail.servicio)} />
-                <Row label="Fecha servicio" value={formatDate(detail.servicio?.fechaServicio)} />
-                <Row label="Ruta" value={getRutaLabel(detail.servicio)} />
-                <Row label="Cliente / pagador" value={getClienteReferencia(detail.servicio)} />
+                {detail.servicio ? (
+                  <>
+                    <Row label="Referencia" value={getServicioReferencia(detail.servicio)} />
+                    <Row label="Fecha servicio" value={formatDate(detail.servicio?.fechaServicio)} />
+                    <Row label="Ruta" value={getRutaLabel(detail.servicio)} />
+                    <Row label="Cliente / pagador" value={getClienteReferencia(detail.servicio)} />
+                  </>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+                    Esta liquidacion no tiene un servicio vinculado. El registro se conserva y puedes volver a vincularlo.
+                  </div>
+                )}
               </Section>
 
               <hr />
@@ -234,9 +287,9 @@ export default function LiquidacionDetailDrawer({
                 {detail.servicio?.vehiculo?.placaCarreta ? (
                   <Row label="Carreta" value={detail.servicio.vehiculo.placaCarreta} />
                 ) : null}
-                <Row label="Conductor" value={getConductorNombre(detail.servicio?.conductor)} />
-                {detail.servicio?.conductor?.nroDocumento ? (
-                  <Row label="Documento" value={detail.servicio.conductor.nroDocumento} />
+                <Row label="Conductor" value={getConductorNombre(detail.conductor || detail.servicio?.conductor)} />
+                {(detail.servicio?.conductor?.nroDocumento || detail.conductor?.nroDocumento) ? (
+                  <Row label="Documento" value={detail.servicio?.conductor?.nroDocumento || detail.conductor?.nroDocumento} />
                 ) : null}
               </Section>
 
@@ -322,6 +375,24 @@ export default function LiquidacionDetailDrawer({
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        open={unlinkOpen}
+        title="Desvincular liquidacion"
+        description="¿Deseas desvincular este documento del servicio? El documento no sera eliminado."
+        warning="La liquidacion conservara sus montos, status y trazabilidad, y podra vincularse nuevamente a otro servicio."
+        confirmLabel="Desvincular liquidacion"
+        loadingLabel="Desvinculando..."
+        error={unlinkError}
+        loading={unlinkSaving}
+        onClose={() => {
+          if (!unlinkSaving) {
+            setUnlinkOpen(false);
+            setUnlinkError("");
+          }
+        }}
+        onConfirm={handleUnlink}
+      />
 
       {isAdmin ? (
         <ConfirmModal

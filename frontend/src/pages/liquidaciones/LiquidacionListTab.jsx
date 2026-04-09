@@ -173,10 +173,16 @@ export default function LiquidacionListTab({
                       )}
                     >
                       <td className="px-4 py-3 text-sm font-semibold text-blue-600">
-                        {getServicioReferencia(liquidacion.servicio)}
+                        {liquidacion.servicioId ? (
+                          getServicioReferencia(liquidacion.servicio)
+                        ) : (
+                          <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
+                            Sin vincular
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500">
-                        {formatDate(liquidacion.servicio?.fechaServicio)}
+                        {formatDate(liquidacion.servicio?.fechaServicio ?? liquidacion.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">
                         {getConductorNombre(liquidacion.conductor || liquidacion.servicio?.conductor)}

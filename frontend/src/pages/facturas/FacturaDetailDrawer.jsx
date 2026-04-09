@@ -171,16 +171,14 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
                 >
                   <ExternalLink className="h-3.5 w-3.5" /> Ir al servicio
                 </Button>
-                {isAdmin && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => { setUnlinkError(""); setUnlinkOpen(true); }}
-                    disabled={loading || !detail}
-                  >
-                    <Unlink className="h-3.5 w-3.5" /> Desvincular
-                  </Button>
-                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setUnlinkError(""); setUnlinkOpen(true); }}
+                  disabled={loading || !detail}
+                >
+                  <Unlink className="h-3.5 w-3.5" /> Desvincular
+                </Button>
               </>
             ) : (
               <Button
@@ -425,7 +423,6 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
         />
       )}
 
-      {isAdmin && (
         <ConfirmModal
           open={unlinkOpen}
           title="Desvincular factura"
@@ -438,7 +435,6 @@ export default function FacturaDetailDrawer({ factura, onClose, onUpdated, onDel
           onClose={() => { if (!unlinkSaving) { setUnlinkOpen(false); setUnlinkError(""); } }}
           onConfirm={handleUnlink}
         />
-      )}
 
       {isAdmin && (
         <ConfirmModal

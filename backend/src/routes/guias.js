@@ -666,7 +666,7 @@ router.patch("/:id/vincular", async (req, res, next) => {
 
 // ── PATCH /api/guias/:id/estado ────────────────────────────────────────────────
 // PATCH /api/guias/:id/desvincular
-router.patch("/:id/desvincular", requireAdmin, async (req, res, next) => {
+router.patch("/:id/desvincular", async (req, res, next) => {
   try {
     const validated = validateRequest({ params: idParamSchema }, req, res);
     if (!validated) return;

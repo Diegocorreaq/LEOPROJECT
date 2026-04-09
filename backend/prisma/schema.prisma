@@ -206,8 +206,8 @@ model GuiaDocRelacionado {
 
 model Liquidacion {
   id             String                   @id @default(uuid())
-  servicioId     String                   @unique
-  servicio       Servicio                 @relation(fields: [servicioId], references: [id])
+  servicioId     String?                  @unique
+  servicio       Servicio?                @relation(fields: [servicioId], references: [id])
   conductorId    String
   conductor      Conductor                @relation(fields: [conductorId], references: [id])
   montoEntregado Decimal                  @default(0)

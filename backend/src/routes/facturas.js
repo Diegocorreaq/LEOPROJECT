@@ -845,7 +845,7 @@ router.patch("/:id/vincular", async (req, res, next) => {
 });
 
 // ── PATCH /api/facturas/:id/desvincular ───────────────────────────────────────
-router.patch("/:id/desvincular", requireAdmin, async (req, res, next) => {
+router.patch("/:id/desvincular", async (req, res, next) => {
   try {
     const validated = validateRequest({ params: idParamSchema }, req, res);
     if (!validated) return;

@@ -577,7 +577,7 @@ router.put("/:id", async (req, res, next) => {
         throw customError;
       }
 
-      if (existing.servicioId !== body.servicioId && req.user.rol !== "ADMIN") {
+      if (existing.servicioId && existing.servicioId !== body.servicioId && req.user.rol !== "ADMIN") {
         const forbidden = new Error("Solo un administrador puede reasignar una liquidacion a otro servicio.");
         forbidden.status = 403;
         throw forbidden;
@@ -665,6 +665,57 @@ router.patch("/:id/status", async (req, res, next) => {
     res.json({
       ...serializeLiquidacion(updated),
       message: "Status actualizado correctamente",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/desvincular", async (req, res, next) => {
+  try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
+    const existing = await prisma.liquidacion.findUnique({
+      where: { id: validated.params.id },
+      select: { id: true, servicioId: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Liquidacion no encontrada." });
+    }
+
+    if (!existing.servicioId) {
+      const currentDetail = await getLiquidacionDetalle(prisma, existing.id);
+      return res.json({
+        ...currentDetail,
+        message: "La liquidacion ya no tiene un servicio vinculado.",
+      });
+    }
+
+    await prisma.liquidacion.update({
+      where: { id: existing.id },
+      data: { servicioId: null },
+    });
+
+    const updated = await getLiquidacionDetalle(prisma, existing.id);
+
+    req.log.info("Liquidacion desvinculada de servicio", {
+      liquidacionId: existing.id,
+      servicioIdAnterior: existing.servicioId,
+      usuarioId: req.user.id,
+    });
+    await recordAuditEvent({
+      entityType: "Liquidacion",
+      entityId: existing.id,
+      action: "unlink_service",
+      req,
+      metadata: { servicioIdAnterior: existing.servicioId },
+    });
+
+    res.json({
+      ...updated,
+      message: "Liquidacion desvinculada correctamente",
     });
   } catch (err) {
     next(err);
