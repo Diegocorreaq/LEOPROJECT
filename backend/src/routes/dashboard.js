@@ -13,6 +13,7 @@ const { z } = require("zod");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireOperaciones } = require("../middleware/rbac");
+const { serializeServiciosEstado } = require("../lib/servicioEstado");
 const { validate } = require("../lib/validate");
 const { isoDateQueryField } = require("../validators/common.schema");
 
@@ -343,7 +344,7 @@ router.get("/general", async (req, res, next) => {
             (ahora.getTime() - new Date(f.fechaVencimiento).getTime()) / 86400000,
           ),
         })),
-        serviciosSinDocumentos,
+        serviciosSinDocumentos: serializeServiciosEstado(serviciosSinDocumentos),
       },
       actividadReciente: {
         ultimasGuias,

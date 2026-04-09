@@ -32,10 +32,15 @@ const MESES_LARGO = [
   "diciembre",
 ];
 
+function normalizeEstadoServicio(estado) {
+  return estado === "COMPLETADO" ? "FINALIZADO" : estado;
+}
+
 const ESTADO_CFG = {
   PROGRAMADO: { label: "Programado", cls: "border border-emerald-200 bg-emerald-50 text-emerald-700" },
   EN_TRANSITO: { label: "En transito", cls: "border border-blue-200 bg-blue-50 text-blue-700" },
-  COMPLETADO: { label: "Completado", cls: "border border-green-300 bg-green-100 text-green-800" },
+  FINALIZADO: { label: "Finalizado", cls: "border border-green-300 bg-green-100 text-green-800" },
+  COMPLETADO: { label: "Finalizado", cls: "border border-green-300 bg-green-100 text-green-800" },
   CANCELADO: { label: "Cancelado", cls: "border border-red-200 bg-red-50 text-red-600" },
 };
 
@@ -48,7 +53,7 @@ const TABS = [
   { key: "TODOS", label: "Todos" },
   { key: "PROGRAMADO", label: "Programado" },
   { key: "EN_TRANSITO", label: "En transito" },
-  { key: "COMPLETADO", label: "Completado" },
+  { key: "FINALIZADO", label: "Finalizado" },
   { key: "OBS", label: "Con obs." },
 ];
 
@@ -113,10 +118,11 @@ export default function ServiciosPage() {
 
   const filtered = useMemo(() => {
     return servicios.filter((servicio) => {
+      const estado = normalizeEstadoServicio(servicio.estado);
       const date = new Date(servicio.fechaServicio);
       if (date.getUTCFullYear() !== mes.year || date.getUTCMonth() !== mes.month) return false;
       if (tab === "OBS" && !servicio.observaciones?.trim()) return false;
-      if (tab !== "TODOS" && tab !== "OBS" && servicio.estado !== tab) return false;
+      if (tab !== "TODOS" && tab !== "OBS" && estado !== tab) return false;
 
       if (search.trim()) {
         const query = search.toLowerCase();
@@ -245,7 +251,8 @@ export default function ServiciosPage() {
                 {filtered.map((servicio) => {
                   const tipo = getTipo(servicio);
                   const tipoCfg = TIPO_CFG[tipo];
-                  const estadoCfg = ESTADO_CFG[servicio.estado] ?? { label: servicio.estado, cls: "" };
+                  const estado = normalizeEstadoServicio(servicio.estado);
+                  const estadoCfg = ESTADO_CFG[estado] ?? { label: estado, cls: "" };
                   const isActive = selected?.id === servicio.id;
 
                   return (
@@ -297,7 +304,8 @@ export default function ServiciosPage() {
 function DetailPanel({ servicio, onClose, navigate }) {
   const tipo = getTipo(servicio);
   const tipoCfg = TIPO_CFG[tipo];
-  const estadoCfg = ESTADO_CFG[servicio.estado] ?? { label: servicio.estado, cls: "" };
+  const estado = normalizeEstadoServicio(servicio.estado);
+  const estadoCfg = ESTADO_CFG[estado] ?? { label: estado, cls: "" };
   const conductorNombre = servicio.conductor
     ? [
         servicio.conductor.nombre,

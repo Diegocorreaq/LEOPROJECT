@@ -4,6 +4,7 @@ const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
 const { recordAuditEvent } = require("../lib/audit");
+const { serializeServiciosEstado } = require("../lib/servicioEstado");
 const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
 const { validate, validateRequest } = require("../lib/validate");
 const { createClienteSchema, updateClienteSchema } = require("../validators/clientes.schema");
@@ -151,7 +152,7 @@ router.get("/:id", async (req, res, next) => {
 
     res.json({
       ...cliente,
-      serviciosRecientes,
+      serviciosRecientes: serializeServiciosEstado(serviciosRecientes),
       facturasRecientes,
     });
   } catch (err) {

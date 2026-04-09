@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { ESTADOS_SERVICIO, normalizeEstadoServicio } = require("../lib/servicioEstado");
 const { servicioClienteLegacySchema } = require("./clientes.schema");
 const {
   booleanQueryField,
@@ -9,10 +10,27 @@ const {
 } = require("./common.schema");
 
 const TIPOS_CONTRATO = ["PROPIO", "SUBCONTRATADO"];
-const ESTADOS_SERVICIO = ["PROGRAMADO", "EN_TRANSITO", "COMPLETADO", "CANCELADO"];
 const TIPOS_UNIDAD = ["CAMION", "TRACTO", "FURGON", "PLATAFORMA", "VOLQUETE", "CISTERNA", "OTRO"];
 const TIPOS_DOCUMENTO = ["DNI", "RUC", "CE", "PASAPORTE"];
 const UBIGEO_REGEX = /^\d{6}$/;
+
+const estadoServicioSchema = z.preprocess(
+  normalizeEstadoServicio,
+  z.enum(ESTADOS_SERVICIO, {
+    errorMap: () => ({ message: `Estado invalido. Valores: ${ESTADOS_SERVICIO.join(", ")}` }),
+  }),
+);
+
+const estadoServicioQuerySchema = z.preprocess(
+  (value) => {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === "string" && value.trim() === "") return undefined;
+    return normalizeEstadoServicio(value);
+  },
+  z.enum(ESTADOS_SERVICIO, {
+    errorMap: () => ({ message: `estado invalido. Valores: ${ESTADOS_SERVICIO.join(", ")}` }),
+  }).optional(),
+);
 
 const empresaSubSchema = z.object({
   razonSocial: z.string().trim().min(2).max(300),
@@ -48,7 +66,7 @@ const baseServicioShape = {
   destino: z.string({ required_error: "destino es requerido" }).trim().min(2).max(300),
   origenUbigeoCodigo: z.string({ required_error: "origenUbigeoCodigo es requerido" }).trim().regex(UBIGEO_REGEX, "origenUbigeoCodigo debe tener 6 digitos"),
   destinoUbigeoCodigo: z.string({ required_error: "destinoUbigeoCodigo es requerido" }).trim().regex(UBIGEO_REGEX, "destinoUbigeoCodigo debe tener 6 digitos"),
-  estado: z.enum(ESTADOS_SERVICIO).default("PROGRAMADO"),
+  estado: estadoServicioSchema.default("PROGRAMADO"),
   observaciones: z.string().trim().max(2000).optional().nullable(),
   tipoContrato: z.enum(TIPOS_CONTRATO, {
     required_error: "tipoContrato es requerido (PROPIO o SUBCONTRATADO)",
@@ -173,16 +191,14 @@ const updateServicioSchema = z
   });
 
 const patchEstadoSchema = z.object({
-  estado: z.enum(ESTADOS_SERVICIO, {
-    required_error: `Estado invalido. Valores: ${ESTADOS_SERVICIO.join(", ")}`,
-  }),
+  estado: estadoServicioSchema,
 }).strict();
 
 const servicioIdParamSchema = idParamSchema;
 
 const listServiciosQuerySchema = paginationQuerySchema.extend({
   texto: stringQueryField("texto"),
-  estado: enumQueryField(ESTADOS_SERVICIO, "estado"),
+  estado: estadoServicioQuerySchema,
   tipoContrato: enumQueryField(TIPOS_CONTRATO, "tipoContrato"),
   conObservaciones: booleanQueryField("conObservaciones"),
 }).strict();

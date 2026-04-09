@@ -5,6 +5,7 @@ const authMiddleware = require("../middleware/auth");
 const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
 const { recordAuditEvent } = require("../lib/audit");
 const { placasCoinciden } = require("../lib/normalizePlaca");
+const { normalizeEstadoServicio, serializeServicioEstado } = require("../lib/servicioEstado");
 const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
 const { validate, validateRequest } = require("../lib/validate");
 const {
@@ -101,7 +102,7 @@ function serializeServicio(servicio) {
   if (!servicio) return null;
 
   return {
-    ...servicio,
+    ...serializeServicioEstado(servicio),
     conductorNombre: formatConductorNombre(servicio.conductor),
     clienteReferencia: getClienteReferencia(servicio),
   };
@@ -441,7 +442,7 @@ router.get("/servicios-disponibles", async (req, res, next) => {
           fechaServicio: servicio.fechaServicio,
           origen: servicio.origen,
           destino: servicio.destino,
-          estado: servicio.estado,
+          estado: normalizeEstadoServicio(servicio.estado),
           conductorId: servicio.conductorId,
           conductor: servicio.conductor
             ? {

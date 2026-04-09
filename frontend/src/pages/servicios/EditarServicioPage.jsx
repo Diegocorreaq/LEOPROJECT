@@ -21,7 +21,7 @@ const MESES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov"
 const ESTADOS = [
   { value: "PROGRAMADO",  label: "Programado" },
   { value: "EN_TRANSITO", label: "En tránsito" },
-  { value: "COMPLETADO",  label: "Completado" },
+  { value: "FINALIZADO",  label: "Finalizado" },
   { value: "CANCELADO",   label: "Cancelado" },
 ];
 const TIPOS_DOC = ["DNI", "CE", "RUC"];
@@ -49,7 +49,7 @@ function buildForm(s) {
       : "";
     return {
       fechaServicio,
-      estado:        s.estado ?? "PROGRAMADO",
+      estado:        (s.estado === "COMPLETADO" ? "FINALIZADO" : s.estado) ?? "PROGRAMADO",
       observaciones: s.observaciones ?? "",
       origen:        s.origen ?? "",
       destino:       s.destino ?? "",
@@ -83,7 +83,7 @@ function buildForm(s) {
     const cond = s.conductor ?? {};
     return {
       fechaServicio,
-      estado:        s.estado ?? "PROGRAMADO",
+      estado:        (s.estado === "COMPLETADO" ? "FINALIZADO" : s.estado) ?? "PROGRAMADO",
       observaciones: s.observaciones ?? "",
       origen:        s.origen ?? "",
       destino:       s.destino ?? "",

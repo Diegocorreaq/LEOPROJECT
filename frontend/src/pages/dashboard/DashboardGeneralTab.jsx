@@ -49,9 +49,14 @@ const ESTADO_PAGO_CLASS = {
 const ESTADO_SERVICIO_CLASS = {
   PROGRAMADO: "border-blue-200 bg-blue-50 text-blue-700",
   EN_TRANSITO: "border-amber-200 bg-amber-50 text-amber-700",
+  FINALIZADO: "border-green-200 bg-green-50 text-green-700",
   COMPLETADO: "border-green-200 bg-green-50 text-green-700",
   CANCELADO: "border-slate-200 bg-slate-50 text-slate-500",
 };
+
+function formatEstadoServicio(estado) {
+  return estado === "COMPLETADO" ? "FINALIZADO" : estado;
+}
 
 // ─── sub-components ──────────────────────────────────────────────────────────
 
@@ -511,11 +516,11 @@ export default function DashboardGeneralTab({ rango, refreshKey }) {
                           <span
                             className={cn(
                               "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                              ESTADO_SERVICIO_CLASS[s.estado] ??
+                              ESTADO_SERVICIO_CLASS[formatEstadoServicio(s.estado)] ??
                                 "border-slate-200 bg-slate-50 text-slate-600",
                             )}
                           >
-                            {s.estado}
+                            {formatEstadoServicio(s.estado)}
                           </span>
                         </td>
                       </tr>

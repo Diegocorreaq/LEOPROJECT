@@ -4,6 +4,7 @@ const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
 const { recordAuditEvent } = require("../lib/audit");
+const { serializeServiciosEstado } = require("../lib/servicioEstado");
 const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
 const { validate, validateRequest } = require("../lib/validate");
 const {
@@ -175,7 +176,7 @@ router.get("/:id", async (req, res, next) => {
       return res.status(404).json({ error: "Vehiculo no encontrado." });
     }
 
-    res.json({ ...vehiculo, serviciosRecientes });
+    res.json({ ...vehiculo, serviciosRecientes: serializeServiciosEstado(serviciosRecientes) });
   } catch (err) {
     next(err);
   }

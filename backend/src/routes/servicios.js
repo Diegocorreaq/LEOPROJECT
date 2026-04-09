@@ -3,6 +3,11 @@ const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireOperaciones } = require("../middleware/rbac");
 const { recordAuditEvent } = require("../lib/audit");
+const {
+  buildEstadoServicioWhere,
+  normalizeEstadoServicio,
+  serializeServicioEstado,
+} = require("../lib/servicioEstado");
 const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
 const { validate, validateRequest } = require("../lib/validate");
 const {
@@ -57,6 +62,7 @@ function addServiceCodes(servicios) {
     const key = `${yy}${mm}`;
     counters[key] = (counters[key] || 0) + 1;
     servicio.codigo = `SVC-${key}-${String(counters[key]).padStart(3, "0")}`;
+    servicio.estado = normalizeEstadoServicio(servicio.estado);
   });
 
   return servicios;
@@ -257,7 +263,7 @@ function buildServicioWhere(query) {
   const and = [];
 
   if (query.estado) {
-    and.push({ estado: query.estado });
+    and.push({ estado: buildEstadoServicioWhere(query.estado) });
   }
 
   if (query.tipoContrato === "PROPIO") {
@@ -329,7 +335,7 @@ router.get("/:id", async (req, res, next) => {
       return res.status(404).json({ error: "Servicio no encontrado" });
     }
 
-    res.json(servicio);
+    res.json(serializeServicioEstado(servicio));
   } catch (err) {
     next(err);
   }
@@ -368,7 +374,7 @@ router.post("/", async (req, res, next) => {
           destino: ruta.destino,
           origenUbigeoCodigo: ruta.origenUbigeo.codigo,
           destinoUbigeoCodigo: ruta.destinoUbigeo.codigo,
-          estado: body.estado,
+          estado: normalizeEstadoServicio(body.estado),
           observaciones: body.observaciones ?? null,
           vehiculoId,
           conductorId,
@@ -395,7 +401,7 @@ router.post("/", async (req, res, next) => {
       },
     });
 
-    res.status(201).json(servicio);
+    res.status(201).json(serializeServicioEstado(servicio));
   } catch (err) {
     next(err);
   }
@@ -511,7 +517,7 @@ router.put("/:id", async (req, res, next) => {
             destino: finalDestino,
             destinoUbigeoCodigo: finalDestinoUbigeoCodigo,
           }),
-          ...(body.estado !== undefined && { estado: body.estado }),
+          ...(body.estado !== undefined && { estado: normalizeEstadoServicio(body.estado) }),
           ...(body.observaciones !== undefined && { observaciones: body.observaciones }),
           vehiculoId: finalVehiculoId,
           conductorId: finalConductorId,
@@ -535,7 +541,7 @@ router.put("/:id", async (req, res, next) => {
       },
     });
 
-    res.json(servicio);
+    res.json(serializeServicioEstado(servicio));
   } catch (err) {
     next(err);
   }
@@ -560,14 +566,14 @@ router.patch("/:id/estado", async (req, res, next) => {
 
     const servicio = await prisma.servicio.update({
       where: { id: existing.id },
-      data: { estado: body.estado },
+      data: { estado: normalizeEstadoServicio(body.estado) },
       include: servicioDetailInclude,
     });
 
     req.log.info("Estado de servicio actualizado", {
       servicioId: servicio.id,
       estadoAnterior: existing.estado,
-      estadoNuevo: body.estado,
+      estadoNuevo: normalizeEstadoServicio(body.estado),
       usuarioId: req.user.id,
     });
     await recordAuditEvent({
@@ -577,11 +583,11 @@ router.patch("/:id/estado", async (req, res, next) => {
       req,
       metadata: {
         estadoAnterior: existing.estado,
-        estadoNuevo: body.estado,
+        estadoNuevo: normalizeEstadoServicio(body.estado),
       },
     });
 
-    res.json(servicio);
+    res.json(serializeServicioEstado(servicio));
   } catch (err) {
     next(err);
   }
