@@ -173,20 +173,20 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Barra de filtros */}
-      <div className="shrink-0 space-y-2 border-b px-6 py-3">
+      <div className="shrink-0 space-y-2 border-b px-4 py-3 sm:px-6">
         {/* Fila 1: búsqueda + fechas */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <Input
               value={textoInput}
               onChange={(e) => setTextoInput(e.target.value)}
               placeholder="Buscar número, placa, remitente, destinatario o guía remitente..."
-              className="h-8 w-80 pl-8 text-sm"
+              className="h-8 w-full pl-8 text-sm sm:w-80"
             />
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5 text-slate-400" />
             <input
               type="date"
@@ -260,14 +260,14 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
 
       {/* Feedback local */}
       {localFeedback && (
-        <div className="shrink-0 border-b border-emerald-100 bg-emerald-50 px-6 py-2 text-sm text-emerald-700">
+        <div className="shrink-0 border-b border-emerald-100 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 sm:px-6">
           {localFeedback}
         </div>
       )}
 
       {/* Cuerpo principal: tabla + drawer */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Tabla */}
+        {/* Tabla + cards */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-auto">
             {loading ? (
@@ -299,19 +299,9 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
                 )}
               </div>
             ) : (
-              <table className="w-full min-w-[700px] text-left">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-50">
-                    <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Guía</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Fecha</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Ruta / Servicio</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Placa</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Estado</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Vínculo</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Partes</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <>
+                {/* ── Cards móvil (< md) ── */}
+                <div className="divide-y md:hidden">
                   {items.map((g) => {
                     const isActive = selected?.id === g.id;
                     const ruta = [g.puntoDeSalida, g.puntoDeLlegada].filter(Boolean).join(" → ");
@@ -321,91 +311,151 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
                         : ruta;
 
                     return (
-                      <tr
+                      <div
                         key={g.id}
                         onClick={() => setSelected(isActive ? null : g)}
                         className={cn(
-                          "cursor-pointer border-b transition-colors hover:bg-slate-50",
-                          isActive && "bg-blue-50 hover:bg-blue-50",
+                          "cursor-pointer px-4 py-3 transition-colors hover:bg-slate-50",
+                          isActive && "bg-blue-50 hover:bg-blue-50"
                         )}
                       >
-                        {/* Número + Guía remitente */}
-                        <td className="px-4 py-3">
-                          <span className="block text-sm font-semibold text-blue-600">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-sm font-semibold text-blue-600">
                             {g.serie}-{g.numero}
                           </span>
-                          {g.guiaRemitentePrincipal && (
-                            <span className="block text-xs text-slate-400">
-                              Rem: {g.guiaRemitentePrincipal}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Fecha */}
-                        <td className="px-4 py-3 text-sm text-slate-500">
+                          <div className="flex items-center gap-1.5">
+                            <GuiaStatusBadge estado={g.estado} />
+                            <VinculoBadge vinculado={g.servicioId != null} />
+                          </div>
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-slate-400">
                           {fechaCorta(g.fechaEmision)}
-                        </td>
-
-                        {/* Ruta / Servicio */}
-                        <td className="px-4 py-3">
-                          {rutaServicio ? (
-                            <span className="text-sm text-slate-700">{rutaServicio}</span>
-                          ) : (
-                            <span className="text-xs text-slate-400">-</span>
-                          )}
-                          {g.servicio?.clientes?.length > 0 && (
-                            <span className="block text-xs text-slate-400">
-                              {g.servicio.clientes.map((c) => c.cliente.razonSocial).join(", ")}
+                          {g.placaPrincipal && (
+                            <span className="ml-2 font-medium text-slate-700">
+                              · {g.placaPrincipal}
+                              {g.placaSecundaria && (
+                                <span className="text-slate-400"> / {g.placaSecundaria}</span>
+                              )}
                             </span>
                           )}
-                        </td>
-
-                        {/* Placa */}
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                          <span>{g.placaPrincipal ?? "-"}</span>
-                          {g.placaSecundaria && (
-                            <span className="ml-1 text-xs text-slate-400">
-                              / {g.placaSecundaria}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Estado persistido */}
-                        <td className="px-4 py-3">
-                          <GuiaStatusBadge estado={g.estado} />
-                        </td>
-
-                        {/* Vínculo derivado */}
-                        <td className="px-4 py-3">
-                          <VinculoBadge vinculado={g.servicioId != null} />
-                        </td>
-
-                        {/* Remitente / Destinatario */}
-                        <td className="px-4 py-3">
-                          {g.remitenteNombre && (
-                            <span className="block max-w-[160px] truncate text-xs text-slate-600">
-                              {g.remitenteNombre}
-                            </span>
-                          )}
-                          {g.destinatarioNombre && (
-                            <span className="block max-w-[160px] truncate text-xs text-slate-400">
-                              → {g.destinatarioNombre}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
+                        </p>
+                        {rutaServicio && (
+                          <p className="mt-0.5 text-sm text-slate-600">{rutaServicio}</p>
+                        )}
+                        {(g.remitenteNombre || g.destinatarioNombre) && (
+                          <p className="mt-0.5 truncate text-xs text-slate-400">
+                            {g.remitenteNombre}
+                            {g.destinatarioNombre && ` → ${g.destinatarioNombre}`}
+                          </p>
+                        )}
+                        {g.guiaRemitentePrincipal && (
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            Rem: {g.guiaRemitentePrincipal}
+                          </p>
+                        )}
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
+                </div>
+
+                {/* ── Tabla desktop (md+) ── */}
+                <div className="hidden md:block">
+                  <table className="w-full min-w-[700px] text-left">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="border-b bg-slate-50">
+                        <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Guía</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Fecha</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Ruta / Servicio</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Placa</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Estado</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Vínculo</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Partes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((g) => {
+                        const isActive = selected?.id === g.id;
+                        const ruta = [g.puntoDeSalida, g.puntoDeLlegada].filter(Boolean).join(" → ");
+                        const rutaServicio =
+                          g.servicio?.origen
+                            ? `${g.servicio.origen} → ${g.servicio.destino}`
+                            : ruta;
+
+                        return (
+                          <tr
+                            key={g.id}
+                            onClick={() => setSelected(isActive ? null : g)}
+                            className={cn(
+                              "cursor-pointer border-b transition-colors hover:bg-slate-50",
+                              isActive && "bg-blue-50 hover:bg-blue-50",
+                            )}
+                          >
+                            <td className="px-4 py-3">
+                              <span className="block text-sm font-semibold text-blue-600">
+                                {g.serie}-{g.numero}
+                              </span>
+                              {g.guiaRemitentePrincipal && (
+                                <span className="block text-xs text-slate-400">
+                                  Rem: {g.guiaRemitentePrincipal}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-500">
+                              {fechaCorta(g.fechaEmision)}
+                            </td>
+                            <td className="px-4 py-3">
+                              {rutaServicio ? (
+                                <span className="text-sm text-slate-700">{rutaServicio}</span>
+                              ) : (
+                                <span className="text-xs text-slate-400">-</span>
+                              )}
+                              {g.servicio?.clientes?.length > 0 && (
+                                <span className="block text-xs text-slate-400">
+                                  {g.servicio.clientes.map((c) => c.cliente.razonSocial).join(", ")}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                              <span>{g.placaPrincipal ?? "-"}</span>
+                              {g.placaSecundaria && (
+                                <span className="ml-1 text-xs text-slate-400">
+                                  / {g.placaSecundaria}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <GuiaStatusBadge estado={g.estado} />
+                            </td>
+                            <td className="px-4 py-3">
+                              <VinculoBadge vinculado={g.servicioId != null} />
+                            </td>
+                            <td className="px-4 py-3">
+                              {g.remitenteNombre && (
+                                <span className="block max-w-[160px] truncate text-xs text-slate-600">
+                                  {g.remitenteNombre}
+                                </span>
+                              )}
+                              {g.destinatarioNombre && (
+                                <span className="block max-w-[160px] truncate text-xs text-slate-400">
+                                  → {g.destinatarioNombre}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
 
           {/* Paginación */}
           {!loading && total > 0 && (
-            <div className="flex shrink-0 items-center justify-between border-t bg-white px-6 py-2">
+            <div className="flex shrink-0 items-center justify-between border-t bg-white px-4 py-2 sm:px-6">
               <span className="text-xs text-slate-500">
-                Página {page} de {totalPages} · {total} guía{total !== 1 ? "s" : ""} en total
+                Pág. {page}/{totalPages} · {total} guía{total !== 1 ? "s" : ""}
               </span>
               <div className="flex items-center gap-1">
                 <button
@@ -416,7 +466,6 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
                   <ChevronLeft className="h-4 w-4" />
                 </button>
 
-                {/* Páginas: mostrar hasta 5 botones alrededor de la actual */}
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let p;
                   if (totalPages <= 5) {
@@ -456,12 +505,16 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
           )}
         </div>
 
-        {/* Drawer de detalle */}
+        {/* Drawer de detalle — full screen en mobile, lateral en desktop */}
         {selected && (
           <div
             className={cn(
-              "shrink-0 overflow-y-auto border-l bg-white shadow-sm transition-[width] duration-200",
-              DRAWER_SIZES[drawerSize]?.cls ?? DRAWER_SIZES.normal.cls,
+              "overflow-y-auto bg-white shadow-sm",
+              "fixed inset-0 z-40",
+              "md:relative md:inset-auto md:z-auto md:border-l md:transition-[width] md:duration-200",
+              drawerSize === "compact" ? "md:w-72" :
+              drawerSize === "wide"    ? "md:w-[600px]" :
+                                         "md:w-[420px]",
             )}
           >
             <GuiaDetailDrawer

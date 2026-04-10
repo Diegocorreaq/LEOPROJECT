@@ -370,7 +370,7 @@ export default function EditarServicioPage() {
     <div className="flex h-full flex-col bg-slate-50">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between border-b bg-white px-8 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-white px-4 py-3 sm:px-8 sm:py-4">
         <div className="flex items-center gap-2 text-sm">
           <button
             onClick={() => navigate("/servicios")}
@@ -394,7 +394,7 @@ export default function EditarServicioPage() {
       </div>
 
       {/* ── Body ── */}
-      <div className="flex flex-1 gap-6 overflow-auto px-8 py-6">
+      <div className="flex flex-1 flex-col gap-6 overflow-auto px-4 py-4 sm:px-6 sm:py-5 lg:flex-row lg:px-8 lg:py-6">
 
         {/* ── Formulario ── */}
         <div className="flex-1 min-w-0 space-y-4">
@@ -404,7 +404,7 @@ export default function EditarServicioPage() {
 
           {/* Datos generales */}
           <FormCard title="Datos generales">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Fecha del servicio" required>
                 <Input type="date" value={form.fechaServicio}
                   onChange={e => upd("fechaServicio", e.target.value)} />
@@ -426,7 +426,7 @@ export default function EditarServicioPage() {
 
           {/* Ruta */}
           <FormCard title="Ruta">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Origen" required>
                 <UbigeoAutocomplete
                   value={form.origen}
@@ -507,7 +507,7 @@ export default function EditarServicioPage() {
                 {/* Vehículo propio */}
                 <div className="space-y-3">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Vehículo</p>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <Field label="Placa vehículo" required>
                       <PlacaAutocomplete
                         value={form._placaText}
@@ -565,7 +565,7 @@ export default function EditarServicioPage() {
                 {/* Empresa */}
                 <div className="space-y-3">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Empresa</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="RUC empresa">
                       <Input maxLength={11} value={form.sub.empresa.ruc}
                         onChange={e => updSub("empresa", "ruc", e.target.value)} />
@@ -580,7 +580,7 @@ export default function EditarServicioPage() {
                 {/* Vehículo subcontratado */}
                 <div className="space-y-3">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Vehículo</p>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <Field label="Placa" required>
                       <PlacaAutocomplete
                         value={form.sub.vehiculo.placa}
@@ -629,7 +629,7 @@ export default function EditarServicioPage() {
                 {/* Conductor subcontratado */}
                 <div className="space-y-3">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Conductor</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="Nombre" required>
                       <Input value={form.sub.conductor.nombre}
                         onChange={e => updSub("conductor", "nombre", e.target.value)} />
@@ -662,9 +662,9 @@ export default function EditarServicioPage() {
           </FormCard>
         </div>
 
-        {/* ── Panel derecho sticky ── */}
-        <div className="w-72 shrink-0">
-          <div className="sticky top-0 space-y-4">
+        {/* ── Panel derecho (debajo en mobile/tablet, lateral en desktop) ── */}
+        <div className="w-full lg:w-72 lg:shrink-0">
+          <div className="space-y-4 lg:sticky lg:top-0">
 
             {/* Resumen */}
             <div className="rounded-xl border bg-white p-5 shadow-sm">

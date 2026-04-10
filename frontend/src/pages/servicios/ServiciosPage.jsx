@@ -157,7 +157,7 @@ export default function ServiciosPage() {
 
   return (
     <div className="flex h-full flex-col bg-white">
-      <div className="flex items-center justify-between border-b px-8 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-8 sm:py-5">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold text-slate-900">Servicios</h1>
           <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500">
@@ -170,15 +170,15 @@ export default function ServiciosPage() {
         </Button>
       </div>
 
-      <div className="flex items-center justify-between gap-4 border-b px-8 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-8">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar placa, cliente, ruta..."
-              className="h-8 w-60 pl-8 text-sm"
+              className="h-8 w-full pl-8 text-sm sm:w-60"
             />
           </div>
           <div className="flex items-center gap-0.5">
@@ -235,64 +235,111 @@ export default function ServiciosPage() {
               </Button>
             </div>
           ) : (
-            <table className="w-full text-left">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b bg-slate-50">
-                  {["# Servicio", "Fecha", "Cliente (pagador)", "Ruta", "Unidad", "Tipo", "Estado"].map(
-                    (heading) => (
-                      <th key={heading} className="px-4 py-2.5 text-xs font-semibold text-slate-500">
-                        {heading}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              {/* ── Cards móvil (< md) ── */}
+              <div className="divide-y md:hidden">
                 {filtered.map((servicio) => {
-                  const tipo = getTipo(servicio);
-                  const tipoCfg = TIPO_CFG[tipo];
-                  const estado = normalizeEstadoServicio(servicio.estado);
+                  const tipo     = getTipo(servicio);
+                  const tipoCfg  = TIPO_CFG[tipo];
+                  const estado   = normalizeEstadoServicio(servicio.estado);
                   const estadoCfg = ESTADO_CFG[estado] ?? { label: estado, cls: "" };
                   const isActive = selected?.id === servicio.id;
 
                   return (
-                    <tr
+                    <div
                       key={servicio.id}
                       onClick={() => setSelected(isActive ? null : servicio)}
                       className={cn(
-                        "cursor-pointer border-b transition-colors hover:bg-slate-50",
-                        isActive && "bg-blue-50 hover:bg-blue-50",
+                        "cursor-pointer px-4 py-3 transition-colors hover:bg-slate-50",
+                        isActive && "bg-blue-50 hover:bg-blue-50"
                       )}
                     >
-                      <td className="px-4 py-3 text-sm font-semibold text-blue-600">{servicio.codigo}</td>
-                      <td className="px-4 py-3 text-sm text-slate-500">{fechaCorta(servicio.fechaServicio)}</td>
-                      <td className="px-4 py-3 text-sm text-slate-900">{primerCliente(servicio)}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {servicio.origen} {"->"} {servicio.destino}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                        {servicio.vehiculo?.placa ?? "-"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", tipoCfg.cls)}>
-                          {tipoCfg.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", estadoCfg.cls)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-sm font-semibold text-blue-600">{servicio.codigo}</span>
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", estadoCfg.cls)}>
                           {estadoCfg.label}
                         </span>
-                      </td>
-                    </tr>
+                      </div>
+                      <p className="mt-0.5 text-sm text-slate-800">{primerCliente(servicio)}</p>
+                      <p className="mt-0.5 text-sm text-slate-600">
+                        {servicio.origen} → {servicio.destino}
+                      </p>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-900">
+                          {servicio.vehiculo?.placa ?? "-"}
+                        </span>
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", tipoCfg.cls)}>
+                          {tipoCfg.label}
+                        </span>
+                        <span className="text-xs text-slate-400">{fechaCorta(servicio.fechaServicio)}</span>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+
+              {/* ── Tabla desktop (md+) ── */}
+              <div className="hidden md:block">
+                <table className="w-full text-left">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="border-b bg-slate-50">
+                      {["# Servicio", "Fecha", "Cliente (pagador)", "Ruta", "Unidad", "Tipo", "Estado"].map(
+                        (heading) => (
+                          <th key={heading} className="px-4 py-2.5 text-xs font-semibold text-slate-500">
+                            {heading}
+                          </th>
+                        ),
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((servicio) => {
+                      const tipo     = getTipo(servicio);
+                      const tipoCfg  = TIPO_CFG[tipo];
+                      const estado   = normalizeEstadoServicio(servicio.estado);
+                      const estadoCfg = ESTADO_CFG[estado] ?? { label: estado, cls: "" };
+                      const isActive = selected?.id === servicio.id;
+
+                      return (
+                        <tr
+                          key={servicio.id}
+                          onClick={() => setSelected(isActive ? null : servicio)}
+                          className={cn(
+                            "cursor-pointer border-b transition-colors hover:bg-slate-50",
+                            isActive && "bg-blue-50 hover:bg-blue-50",
+                          )}
+                        >
+                          <td className="px-4 py-3 text-sm font-semibold text-blue-600">{servicio.codigo}</td>
+                          <td className="px-4 py-3 text-sm text-slate-500">{fechaCorta(servicio.fechaServicio)}</td>
+                          <td className="px-4 py-3 text-sm text-slate-900">{primerCliente(servicio)}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600">
+                            {servicio.origen} {"->"} {servicio.destino}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                            {servicio.vehiculo?.placa ?? "-"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", tipoCfg.cls)}>
+                              {tipoCfg.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", estadoCfg.cls)}>
+                              {estadoCfg.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
         {selected && (
-          <div className="w-80 shrink-0 overflow-y-auto border-l bg-white shadow-sm">
+          <div className="fixed inset-0 z-40 overflow-y-auto bg-white md:relative md:inset-auto md:z-auto md:w-80 md:shrink-0 md:border-l md:shadow-sm">
             <DetailPanel servicio={selected} onClose={() => setSelected(null)} navigate={navigate} />
           </div>
         )}

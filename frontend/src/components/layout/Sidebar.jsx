@@ -13,6 +13,7 @@ import {
   BookOpen,
   LogOut,
   Package,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -37,31 +38,61 @@ const ROL_LABELS = {
   GERENCIA: "Gerencia",
 };
 
-export default function Sidebar() {
+/**
+ * Sidebar responsive:
+ * - Desktop (lg+): posición relativa, siempre visible como hijo del flex layout.
+ * - Mobile/tablet (< lg): posición fija, se desliza como drawer desde la izquierda.
+ *   Se controla con las props `open` y `onClose`.
+ */
+export default function Sidebar({ open, onClose }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   async function handleLogout() {
-    await logout();     // borra cookie en el backend antes de redirigir
+    await logout();
     navigate("/login");
   }
 
+  // Cierra el drawer al navegar (solo tiene efecto en mobile)
+  function handleNavClick() {
+    onClose?.();
+  }
+
   return (
-    <aside className="flex h-screen w-64 flex-col bg-slate-900 text-white">
-      {/* Logo */}
-      <div className="flex items-center gap-3 border-b border-slate-700 px-6 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500">
-          <Package className="h-5 w-5 text-white" />
+    <aside
+      className={cn(
+        // Estilos base compartidos
+        "flex w-64 flex-col bg-slate-900 text-white",
+        // Mobile/tablet: fixed overlay con transición
+        "fixed inset-y-0 left-0 z-30 transition-transform duration-300 ease-in-out",
+        open ? "translate-x-0" : "-translate-x-full",
+        // Desktop: vuelve al flujo normal del flex layout, siempre visible
+        "lg:relative lg:inset-y-auto lg:z-auto lg:h-screen lg:shrink-0 lg:translate-x-0 lg:transition-none"
+      )}
+    >
+      {/* ── Logo + botón cerrar (solo mobile) ── */}
+      <div className="flex items-center justify-between border-b border-slate-700 px-6 py-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500">
+            <Package className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-bold leading-tight tracking-wide text-white">
+              Grupo Leo
+            </p>
+            <p className="text-xs text-slate-400">S.A.C.</p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-bold leading-tight tracking-wide text-white">
-            Grupo Leo
-          </p>
-          <p className="text-xs text-slate-400">S.A.C.</p>
-        </div>
+        <button
+          onClick={onClose}
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
+          aria-label="Cerrar menú"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
-      {/* Navigation */}
+      {/* ── Navegación ── */}
       <nav className="sidebar-scrollbar flex-1 overflow-y-auto px-3 py-4">
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
           Menú principal
@@ -72,6 +103,7 @@ export default function Sidebar() {
               <NavLink
                 to={href}
                 end={href === "/"}
+                onClick={handleNavClick}
                 className={({ isActive }) =>
                   cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -89,7 +121,7 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      {/* User info + Logout */}
+      {/* ── Usuario + cerrar sesión ── */}
       <div className="border-t border-slate-700 p-4">
         <div className="mb-3 flex items-center gap-3 rounded-lg bg-slate-800 px-3 py-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500 text-sm font-bold text-white">

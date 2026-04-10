@@ -168,14 +168,14 @@ export default function FacturaListTab({ facturas, loading, onFacturaUpdated, on
     <div className="flex flex-1 flex-col overflow-hidden">
 
       {/* Barra de búsqueda + filtros rápidos */}
-      <div className="flex flex-wrap items-center gap-3 border-b bg-white px-6 py-2.5">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-3 border-b bg-white px-4 py-2.5 sm:px-6">
+        <div className="relative w-full sm:w-auto">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Nº factura, cliente, RUC, guía, placa, ruta..."
-            className="h-8 w-72 pl-8 text-sm"
+            className="h-8 w-full pl-8 text-sm sm:w-72"
           />
         </div>
 
@@ -245,7 +245,7 @@ export default function FacturaListTab({ facturas, loading, onFacturaUpdated, on
       </div>
 
       {/* Tabs de estado */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b bg-white px-6 py-1.5">
+      <div className="flex flex-wrap items-center gap-0.5 border-b bg-white px-4 py-1.5 sm:px-6">
         {STATUS_TABS.map((item) => (
           <button
             key={item.key}
@@ -282,132 +282,199 @@ export default function FacturaListTab({ facturas, loading, onFacturaUpdated, on
               )}
             </div>
           ) : (
-            <table className="w-full min-w-[860px] text-left">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b bg-slate-50">
-                  <th className="w-[128px] px-4 py-2.5 text-xs font-semibold text-slate-500">Documento</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Cliente</th>
-                  <th className="w-[108px] px-4 py-2.5 text-xs font-semibold text-slate-500">Total</th>
-                  <th className="w-[118px] px-4 py-2.5 text-xs font-semibold text-slate-500">Pago</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Guía / Servicio</th>
-                  <th className="w-[148px] px-4 py-2.5 text-xs font-semibold text-slate-500">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              {/* ── Cards móvil (< md) ── */}
+              <div className="divide-y md:hidden">
                 {filtered.map((f) => {
-                  const isActive       = selected?.id === f.id;
-                  const vencida        = isFacturaVencida(f);
-                  const porVencer      = isFacturaPorVencer(f);
-                  const primaryGuia    = getFacturaPrimaryGuia(f);
-                  const servicioRes    = getFacturaServicioResumen(f);
-                  const cantGuias      = f.guias?.length ?? 0;
+                  const isActive        = selected?.id === f.id;
+                  const vencida         = isFacturaVencida(f);
+                  const porVencer       = isFacturaPorVencer(f);
+                  const primaryGuia     = getFacturaPrimaryGuia(f);
+                  const servicioRes     = getFacturaServicioResumen(f);
+                  const cantGuias       = f.guias?.length ?? 0;
                   const tieneDetraccion =
                     Number(f.detraccionMonto) > 0 || Number(f.detraccionPorcentaje) > 0;
 
                   return (
-                    <tr
+                    <div
                       key={f.id}
                       onClick={() => setSelected(isActive ? null : f)}
                       className={cn(
-                        "cursor-pointer border-b transition-colors hover:bg-slate-50",
+                        "cursor-pointer px-4 py-3 transition-colors hover:bg-slate-50",
                         isActive && "bg-blue-50 hover:bg-blue-50"
                       )}
                     >
-                      {/* Documento */}
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-semibold leading-tight text-blue-600">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-sm font-semibold text-blue-600">
                           {f.serie}-{f.numero}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-400">
-                          {fechaCorta(f.fechaEmision)}
-                        </p>
-                      </td>
-
-                      {/* Cliente */}
-                      <td className="px-4 py-3">
-                        <p className="text-sm leading-tight text-slate-800">
-                          {f.cliente?.razonSocial ?? "—"}
-                        </p>
-                        {f.cliente?.ruc && (
-                          <p className="mt-0.5 text-[11px] text-slate-400">{f.cliente.ruc}</p>
-                        )}
-                      </td>
-
-                      {/* Total */}
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-medium leading-tight text-slate-800">
-                          {fmtTotal(f.total, f.moneda)}
-                        </p>
-                        {f.origenImportacion && (
-                          <p className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-400">
-                            {f.origenImportacion}
-                          </p>
-                        )}
-                      </td>
-
-                      {/* Pago */}
-                      <td className="px-4 py-3">
-                        <FormaPagoBadge formaPago={f.formaPago} />
-                        {f.fechaVencimiento ? (
-                          <p className={cn(
-                            "mt-0.5 text-[11px] leading-tight",
-                            vencida   ? "font-medium text-red-600"  :
-                            porVencer ? "text-amber-600"            :
-                            "text-slate-400"
+                        </span>
+                        <FacturaStatusBadge estado={f.estadoPago} />
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        {fechaCorta(f.fechaEmision)}
+                        {f.fechaVencimiento && (
+                          <span className={cn(
+                            "ml-2",
+                            vencida ? "font-medium text-red-600" :
+                            porVencer ? "text-amber-600" : "text-slate-400"
                           )}>
-                            {vencida ? "Vencida · " : porVencer ? "Vence · " : ""}
-                            {fechaCorta(f.fechaVencimiento)}
-                          </p>
-                        ) : f.formaPago === "CREDITO" ? (
-                          <p className="mt-0.5 text-[11px] text-amber-500">Sin vencimiento</p>
-                        ) : null}
-                      </td>
-
-                      {/* Guía / Servicio */}
-                      <td className="px-4 py-3">
-                        {primaryGuia ? (
-                          <p className="font-mono text-xs leading-tight text-slate-700">
-                            {primaryGuia}
-                            {cantGuias > 1 && (
-                              <span className="ml-1 font-sans text-[10px] text-slate-400">
-                                +{cantGuias - 1}
-                              </span>
-                            )}
-                          </p>
-                        ) : (
-                          <p className="text-[11px] text-slate-400">Sin guía</p>
-                        )}
-
-                        {servicioRes ? (
-                          <p className="mt-0.5 text-[11px] leading-tight text-slate-500 max-w-[200px] truncate"
-                             title={[servicioRes.placa, servicioRes.ruta].filter(Boolean).join(" · ")}>
-                            {[servicioRes.placa, servicioRes.ruta].filter(Boolean).join(" · ")}
-                          </p>
-                        ) : (
-                          <span className="mt-0.5 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset bg-red-50 text-red-500 ring-red-200">
-                            Sin vincular
+                            · {vencida ? "Vencida" : porVencer ? "Por vencer" : fechaCorta(f.fechaVencimiento)}
                           </span>
                         )}
-                      </td>
-
-                      {/* Estado + alertas secundarias */}
-                      <td className="px-4 py-3">
-                        <FacturaStatusBadge estado={f.estadoPago} />
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {tieneDetraccion && <AlertTag label="Detracción" color="blue" />}
-                          {cantGuias === 0  && <AlertTag label="Sin guía"  color="slate" />}
-                        </div>
-                      </td>
-                    </tr>
+                      </p>
+                      <p className="mt-1 text-sm leading-tight text-slate-800">
+                        {f.cliente?.razonSocial ?? "—"}
+                        {f.cliente?.ruc && (
+                          <span className="ml-1.5 text-[11px] text-slate-400">{f.cliente.ruc}</span>
+                        )}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-slate-800">
+                          {fmtTotal(f.total, f.moneda)}
+                        </span>
+                        <FormaPagoBadge formaPago={f.formaPago} />
+                        {tieneDetraccion && <AlertTag label="Detracción" color="blue" />}
+                      </div>
+                      {primaryGuia ? (
+                        <p className="mt-1 font-mono text-xs text-slate-600">
+                          {primaryGuia}
+                          {cantGuias > 1 && (
+                            <span className="ml-1 font-sans text-[10px] text-slate-400">
+                              +{cantGuias - 1}
+                            </span>
+                          )}
+                          {servicioRes && (
+                            <span className="ml-1 font-sans text-slate-400">
+                              · {[servicioRes.placa, servicioRes.ruta].filter(Boolean).join(" · ")}
+                            </span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-[11px] text-slate-400">Sin guía asociada</p>
+                      )}
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+
+              {/* ── Tabla desktop (md+) ── */}
+              <div className="hidden md:block">
+                <table className="w-full min-w-[860px] text-left">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="border-b bg-slate-50">
+                      <th className="w-[128px] px-4 py-2.5 text-xs font-semibold text-slate-500">Documento</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Cliente</th>
+                      <th className="w-[108px] px-4 py-2.5 text-xs font-semibold text-slate-500">Total</th>
+                      <th className="w-[118px] px-4 py-2.5 text-xs font-semibold text-slate-500">Pago</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Guía / Servicio</th>
+                      <th className="w-[148px] px-4 py-2.5 text-xs font-semibold text-slate-500">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((f) => {
+                      const isActive        = selected?.id === f.id;
+                      const vencida         = isFacturaVencida(f);
+                      const porVencer       = isFacturaPorVencer(f);
+                      const primaryGuia     = getFacturaPrimaryGuia(f);
+                      const servicioRes     = getFacturaServicioResumen(f);
+                      const cantGuias       = f.guias?.length ?? 0;
+                      const tieneDetraccion =
+                        Number(f.detraccionMonto) > 0 || Number(f.detraccionPorcentaje) > 0;
+
+                      return (
+                        <tr
+                          key={f.id}
+                          onClick={() => setSelected(isActive ? null : f)}
+                          className={cn(
+                            "cursor-pointer border-b transition-colors hover:bg-slate-50",
+                            isActive && "bg-blue-50 hover:bg-blue-50"
+                          )}
+                        >
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-semibold leading-tight text-blue-600">
+                              {f.serie}-{f.numero}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-slate-400">
+                              {fechaCorta(f.fechaEmision)}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="text-sm leading-tight text-slate-800">
+                              {f.cliente?.razonSocial ?? "—"}
+                            </p>
+                            {f.cliente?.ruc && (
+                              <p className="mt-0.5 text-[11px] text-slate-400">{f.cliente.ruc}</p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-medium leading-tight text-slate-800">
+                              {fmtTotal(f.total, f.moneda)}
+                            </p>
+                            {f.origenImportacion && (
+                              <p className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-400">
+                                {f.origenImportacion}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <FormaPagoBadge formaPago={f.formaPago} />
+                            {f.fechaVencimiento ? (
+                              <p className={cn(
+                                "mt-0.5 text-[11px] leading-tight",
+                                vencida   ? "font-medium text-red-600"  :
+                                porVencer ? "text-amber-600"            :
+                                "text-slate-400"
+                              )}>
+                                {vencida ? "Vencida · " : porVencer ? "Vence · " : ""}
+                                {fechaCorta(f.fechaVencimiento)}
+                              </p>
+                            ) : f.formaPago === "CREDITO" ? (
+                              <p className="mt-0.5 text-[11px] text-amber-500">Sin vencimiento</p>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            {primaryGuia ? (
+                              <p className="font-mono text-xs leading-tight text-slate-700">
+                                {primaryGuia}
+                                {cantGuias > 1 && (
+                                  <span className="ml-1 font-sans text-[10px] text-slate-400">
+                                    +{cantGuias - 1}
+                                  </span>
+                                )}
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-slate-400">Sin guía</p>
+                            )}
+                            {servicioRes ? (
+                              <p className="mt-0.5 text-[11px] leading-tight text-slate-500 max-w-[200px] truncate"
+                                 title={[servicioRes.placa, servicioRes.ruta].filter(Boolean).join(" · ")}>
+                                {[servicioRes.placa, servicioRes.ruta].filter(Boolean).join(" · ")}
+                              </p>
+                            ) : (
+                              <span className="mt-0.5 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset bg-red-50 text-red-500 ring-red-200">
+                                Sin vincular
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <FacturaStatusBadge estado={f.estadoPago} />
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {tieneDetraccion && <AlertTag label="Detracción" color="blue" />}
+                              {cantGuias === 0  && <AlertTag label="Sin guía"  color="slate" />}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
         {selected && (
-          <div className="w-96 shrink-0 overflow-y-auto border-l bg-white shadow-sm">
+          <div className="fixed inset-0 z-40 overflow-y-auto bg-white md:relative md:inset-auto md:z-auto md:w-96 md:shrink-0 md:border-l md:shadow-sm">
             <FacturaDetailDrawer
               factura={selected}
               onClose={() => setSelected(null)}

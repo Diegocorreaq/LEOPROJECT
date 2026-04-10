@@ -75,15 +75,15 @@ export default function LiquidacionListTab({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-8 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-8">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar servicio, conductor, placa, cliente..."
-              className="h-8 w-72 pl-8 text-sm"
+              className="h-8 w-full pl-8 text-sm sm:w-72"
             />
           </div>
 
@@ -137,88 +137,147 @@ export default function LiquidacionListTab({
               No hay liquidaciones para mostrar con los filtros actuales.
             </div>
           ) : (
-            <table className="w-full text-left">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b bg-slate-50">
-                  {[
-                    "Servicio",
-                    "Fecha",
-                    "Conductor",
-                    "Placa",
-                    "Cliente / pagador",
-                    "Ruta",
-                    "Status",
-                    "Monto entregado",
-                    "Total gastos",
-                    "Saldo",
-                    "Detalle saldo",
-                  ].map((heading) => (
-                    <th key={heading} className="px-4 py-2.5 text-xs font-semibold text-slate-500">
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              {/* ── Cards móvil (< md) ── */}
+              <div className="divide-y md:hidden">
                 {filtered.map((liquidacion) => {
-                  const isActive = selectedLiquidacionId === liquidacion.id;
+                  const isActive   = selectedLiquidacionId === liquidacion.id;
+                  const saldoTag   = getSaldoFavorTag(liquidacion);
+                  const saldoCls   = saldoTag === "EMPRESA"
+                    ? "text-emerald-700"
+                    : saldoTag === "CONDUCTOR"
+                    ? "text-amber-700"
+                    : "text-slate-700";
 
                   return (
-                    <tr
+                    <div
                       key={liquidacion.id}
                       onClick={() => onSelectLiquidacion?.(isActive ? null : liquidacion.id)}
                       className={cn(
-                        "cursor-pointer border-b transition-colors hover:bg-slate-50",
-                        isActive && "bg-blue-50 hover:bg-blue-50",
+                        "cursor-pointer px-4 py-3 transition-colors hover:bg-slate-50",
+                        isActive && "bg-blue-50 hover:bg-blue-50"
                       )}
                     >
-                      <td className="px-4 py-3 text-sm font-semibold text-blue-600">
-                        {liquidacion.servicioId ? (
-                          getServicioReferencia(liquidacion.servicio)
-                        ) : (
-                          <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
-                            Sin vincular
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-sm font-semibold text-blue-600">
+                          {liquidacion.servicioId
+                            ? getServicioReferencia(liquidacion.servicio)
+                            : <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">Sin vincular</span>
+                          }
+                        </span>
+                        <LiquidacionStatusBadge status={liquidacion.status} />
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        {formatDate(liquidacion.servicio?.fechaServicio ?? liquidacion.createdAt)}
+                        {liquidacion.servicio?.vehiculo?.placa && (
+                          <span className="ml-2 font-medium text-slate-700">
+                            · {liquidacion.servicio.vehiculo.placa}
                           </span>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-500">
-                        {formatDate(liquidacion.servicio?.fechaServicio ?? liquidacion.createdAt)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
+                      </p>
+                      <p className="mt-0.5 text-sm text-slate-700">
                         {getConductorNombre(liquidacion.conductor || liquidacion.servicio?.conductor)}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                        {liquidacion.servicio?.vehiculo?.placa ?? "-"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {getClienteReferencia(liquidacion.servicio)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">{getRutaLabel(liquidacion.servicio)}</td>
-                      <td className="px-4 py-3">
-                        <LiquidacionStatusBadge status={liquidacion.status} />
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {formatCurrency(liquidacion.montoEntregado)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {formatCurrency(liquidacion.totalGastos)}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-slate-800">
-                        {formatCurrency(liquidacion.saldo)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {liquidacion.detalleSaldo || "-"}
-                      </td>
-                    </tr>
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">{getRutaLabel(liquidacion.servicio)}</p>
+                      <div className="mt-1.5 flex items-center gap-3">
+                        <span className="text-xs text-slate-500">
+                          Entregado: <span className="font-medium text-slate-700">{formatCurrency(liquidacion.montoEntregado)}</span>
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          Saldo: <span className={cn("font-semibold", saldoCls)}>{formatCurrency(liquidacion.saldo)}</span>
+                        </span>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+
+              {/* ── Tabla desktop (md+) ── */}
+              <div className="hidden md:block">
+                <table className="w-full text-left">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="border-b bg-slate-50">
+                      {[
+                        "Servicio",
+                        "Fecha",
+                        "Conductor",
+                        "Placa",
+                        "Cliente / pagador",
+                        "Ruta",
+                        "Status",
+                        "Monto entregado",
+                        "Total gastos",
+                        "Saldo",
+                        "Detalle saldo",
+                      ].map((heading) => (
+                        <th key={heading} className="px-4 py-2.5 text-xs font-semibold text-slate-500">
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((liquidacion) => {
+                      const isActive = selectedLiquidacionId === liquidacion.id;
+
+                      return (
+                        <tr
+                          key={liquidacion.id}
+                          onClick={() => onSelectLiquidacion?.(isActive ? null : liquidacion.id)}
+                          className={cn(
+                            "cursor-pointer border-b transition-colors hover:bg-slate-50",
+                            isActive && "bg-blue-50 hover:bg-blue-50",
+                          )}
+                        >
+                          <td className="px-4 py-3 text-sm font-semibold text-blue-600">
+                            {liquidacion.servicioId ? (
+                              getServicioReferencia(liquidacion.servicio)
+                            ) : (
+                              <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
+                                Sin vincular
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-500">
+                            {formatDate(liquidacion.servicio?.fechaServicio ?? liquidacion.createdAt)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700">
+                            {getConductorNombre(liquidacion.conductor || liquidacion.servicio?.conductor)}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                            {liquidacion.servicio?.vehiculo?.placa ?? "-"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600">
+                            {getClienteReferencia(liquidacion.servicio)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600">{getRutaLabel(liquidacion.servicio)}</td>
+                          <td className="px-4 py-3">
+                            <LiquidacionStatusBadge status={liquidacion.status} />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700">
+                            {formatCurrency(liquidacion.montoEntregado)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700">
+                            {formatCurrency(liquidacion.totalGastos)}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-slate-800">
+                            {formatCurrency(liquidacion.saldo)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600">
+                            {liquidacion.detalleSaldo || "-"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
         {selectedLiquidacionId && (
-          <div className="w-96 shrink-0 overflow-y-auto border-l bg-white shadow-sm">
+          <div className="fixed inset-0 z-40 overflow-y-auto bg-white md:relative md:inset-auto md:z-auto md:w-96 md:shrink-0 md:border-l md:shadow-sm">
             <LiquidacionDetailDrawer
               key={selectedLiquidacionId}
               liquidacionId={selectedLiquidacionId}
