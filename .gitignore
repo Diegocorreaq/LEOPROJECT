@@ -26,11 +26,18 @@ npm-debug.log*
 pino-debug.log*
 logs/
 
+# Herramientas de desarrollo local
 .DS_Store
 .vscode/settings.json
 .idea/
 .claude/
 *.local.json
+.mcp.json
+
+# One-off scripts de corrección de BD (no son migraciones formales)
+backend/prisma/fix-*.js
+
+# Archivos del sistema operativo
 *.suo
 *.ntvs*
 *.njsproj

@@ -3,11 +3,14 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 const prisma = require("../lib/prisma");
+const { getCookieSettings } = require("../config/env");
 const authMiddleware = require("../middleware/auth");
 const { validate } = require("../lib/validate");
 const { loginSchema } = require("../validators/auth.schema");
 
 const router = express.Router();
+const AUTH_COOKIE_NAME = "token";
+const AUTH_COOKIE_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -18,15 +21,25 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true,
 });
 
-function setAuthCookie(res, token) {
-  const isProduction = process.env.NODE_ENV === "production";
-  res.cookie("token", token, {
+function getAuthCookieOptions() {
+  const { secure, sameSite } = getCookieSettings();
+
+  return {
     httpOnly: true,
-    secure: isProduction || process.env.COOKIE_SECURE === "true",
-    sameSite: isProduction ? "strict" : "lax",
-    maxAge: 8 * 60 * 60 * 1000,
+    secure,
+    sameSite,
+    maxAge: AUTH_COOKIE_MAX_AGE_MS,
     path: "/",
-  });
+  };
+}
+
+function setAuthCookie(res, token) {
+  res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
+}
+
+function clearAuthCookie(res) {
+  const { maxAge, ...clearOptions } = getAuthCookieOptions();
+  res.clearCookie(AUTH_COOKIE_NAME, clearOptions);
 }
 
 router.post("/login", loginLimiter, async (req, res, next) => {
@@ -67,7 +80,7 @@ router.post("/login", loginLimiter, async (req, res, next) => {
 });
 
 router.post("/logout", (req, res) => {
-  res.clearCookie("token", { path: "/", httpOnly: true });
+  clearAuthCookie(res);
   req.log.info("Logout ejecutado", { userId: req.user?.id ?? null });
   res.json({ message: "Sesion cerrada correctamente" });
 });

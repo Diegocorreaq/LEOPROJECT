@@ -167,7 +167,7 @@ model GuiaRemision {
   transbordo                  Boolean              @default(false)
   retornoVacio                Boolean              @default(false)
   subcontratado               Boolean              @default(false)
-  estado                      String               @default("EMITIDA")
+  estado                      String               @default("EN_TRANSITO")
   fechaRecepcion              DateTime?
   observaciones               String?
   observacionSunat            String?
@@ -180,6 +180,9 @@ model GuiaRemision {
   docsRelacionados            GuiaDocRelacionado[]
 
   @@unique([serie, numero])
+  @@index([fechaEmision])
+  @@index([estado])
+  @@index([servicioId])
 }
 
 model GuiaBien {

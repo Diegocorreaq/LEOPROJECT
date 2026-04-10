@@ -1,11 +1,8 @@
 const { z } = require("zod");
 
-const ESTADOS_GUIA = [
-  "EMITIDA",
-  "EN_TRANSITO",
-  "RECIBIDA",
-  "CON_OBSERVACIONES",
-];
+// Solo estados que se persisten en la columna `estado`.
+// "VINCULADO" / "NO_VINCULADO" son derivados de servicioId, NO se persisten.
+const ESTADOS_GUIA = ["EN_TRANSITO", "RECIBIDA"];
 
 const vincularGuiaSchema = z.object({
   servicioId: z

@@ -34,6 +34,7 @@ const {
   booleanQueryField,
   enumQueryField,
   idParamSchema,
+  isoDateQueryField,
   paginationQuerySchema,
   stringQueryField,
   uuidQueryField,
@@ -48,11 +49,16 @@ const router = express.Router();
 router.use(authMiddleware);
 router.use(requireOperaciones);
 
+// "VINCULADO" / "NO_VINCULADO" son filtros derivados, no estados persistidos.
+const VINCULOS = ["VINCULADO", "NO_VINCULADO"];
+
 const guiaListQuerySchema = paginationQuerySchema.extend({
   estado: enumQueryField(ESTADOS_GUIA, "estado"),
+  vinculo: enumQueryField(VINCULOS, "vinculo"),
   servicioId: uuidQueryField("servicioId"),
-  sinVincular: booleanQueryField("sinVincular"),
-  texto: stringQueryField("texto", { max: 120 }),
+  texto: stringQueryField("texto", { max: 200 }),
+  fechaEmisionDesde: isoDateQueryField("fechaEmisionDesde"),
+  fechaEmisionHasta: isoDateQueryField("fechaEmisionHasta"),
 }).strict();
 
 // ── Multer: memoria, máx 15 MB, solo XML/ZIP/PDF ─────────────────────────────
@@ -124,7 +130,7 @@ function buildGuiaCreateData(extracted, { origenImportacion, nombreArchivoOrigen
     origenImportacion,
     nombreArchivoOrigen,
     rawPayload: extracted,
-    estado: "EMITIDA",
+    estado: "EN_TRANSITO",
     servicioId: null,
     bienes: {
       create: (extracted.bienes ?? []).map((bien) => ({
@@ -242,15 +248,34 @@ router.get("/", async (req, res, next) => {
     const validated = validateRequest({ query: guiaListQuerySchema }, req, res);
     if (!validated) return;
 
-    const { estado, servicioId, sinVincular, texto } = validated.query;
-    const pagination = resolvePagination(validated.query, { defaultLimit: 100, maxLimit: 100 });
+    const { estado, vinculo, servicioId, texto, fechaEmisionDesde, fechaEmisionHasta } =
+      validated.query;
+    const pagination = resolvePagination(validated.query, { defaultLimit: 50, maxLimit: 100 });
 
     const where = {};
 
+    // Filtro por estado persistido (EN_TRANSITO | RECIBIDA)
     if (estado) where.estado = estado;
-    if (servicioId) where.servicioId = servicioId;
-    if (sinVincular) where.servicioId = null;
 
+    // Filtro por servicioId exacto (uso interno / vinculación)
+    if (servicioId) where.servicioId = servicioId;
+
+    // Filtro de vínculo derivado
+    if (vinculo === "VINCULADO") where.servicioId = { not: null };
+    if (vinculo === "NO_VINCULADO") where.servicioId = null;
+
+    // Filtro por rango de fecha de emisión
+    if (fechaEmisionDesde || fechaEmisionHasta) {
+      where.fechaEmision = {};
+      if (fechaEmisionDesde) {
+        where.fechaEmision.gte = new Date(`${fechaEmisionDesde}T00:00:00.000Z`);
+      }
+      if (fechaEmisionHasta) {
+        where.fechaEmision.lte = new Date(`${fechaEmisionHasta}T23:59:59.999Z`);
+      }
+    }
+
+    // Búsqueda de texto: número, placas, partes, guía remitente y documentos relacionados
     if (texto) {
       const q = texto.trim();
       where.OR = [
@@ -260,6 +285,9 @@ router.get("/", async (req, res, next) => {
         { placaSecundaria: { contains: q, mode: "insensitive" } },
         { remitenteNombre: { contains: q, mode: "insensitive" } },
         { destinatarioNombre: { contains: q, mode: "insensitive" } },
+        { puntoDeSalida: { contains: q, mode: "insensitive" } },
+        { puntoDeLlegada: { contains: q, mode: "insensitive" } },
+        { conductorPrincipalNombre: { contains: q, mode: "insensitive" } },
         {
           docsRelacionados: {
             some: { numeroDocumento: { contains: q, mode: "insensitive" } },
@@ -286,12 +314,27 @@ router.get("/", async (req, res, next) => {
           remitenteNombre: true,
           destinatarioNombre: true,
           createdAt: true,
+          // Guía remitente: primer doc relacionado de tipo remitente (código 09 SUNAT)
+          docsRelacionados: {
+            where: {
+              OR: [
+                { tipoDocumentoCode: "09" },
+                { tipoDocumento: { contains: "REMITENTE", mode: "insensitive" } },
+                { tipoDocumento: { contains: "GUIA DE REMISION", mode: "insensitive" } },
+              ],
+            },
+            select: { numeroDocumento: true, tipoDocumento: true },
+            orderBy: { id: "asc" },
+            take: 1,
+          },
           servicio: {
             select: {
               id: true,
               origen: true,
               destino: true,
+              fechaServicio: true,
               vehiculo: { select: { placa: true } },
+              clientes: { select: { cliente: { select: { razonSocial: true } } } },
             },
           },
         },
@@ -301,9 +344,11 @@ router.get("/", async (req, res, next) => {
       }),
     ]);
 
-    const result = guias.map((g) => ({
+    const result = guias.map(({ docsRelacionados, ...g }) => ({
       ...g,
       numeroCompleto: `${g.serie}-${g.numero}`,
+      guiaRemitentePrincipal: docsRelacionados?.[0]?.numeroDocumento ?? null,
+      vinculoEstado: g.servicioId ? "VINCULADO" : "NO_VINCULADO",
     }));
 
     applyPaginationHeaders(res, { ...pagination, total });

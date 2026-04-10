@@ -1,4 +1,9 @@
-const { getAllowedOrigins, getRequestOrigin } = require("../config/origins");
+const {
+  getAllowedOrigins,
+  getRequestOrigin,
+  getServerOrigin,
+  isAllowedOrigin,
+} = require("../config/origins");
 const logger = require("../lib/logger");
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -15,8 +20,9 @@ module.exports = function csrfProtection(req, res, next) {
 
   const requestOrigin = getRequestOrigin(req);
   const allowedOrigins = getAllowedOrigins();
+  const serverOrigin = getServerOrigin(req);
 
-  if (requestOrigin && allowedOrigins.includes(requestOrigin)) {
+  if (requestOrigin && isAllowedOrigin(requestOrigin, req, allowedOrigins)) {
     return next();
   }
 
@@ -24,6 +30,7 @@ module.exports = function csrfProtection(req, res, next) {
   currentLogger.warn("Solicitud bloqueada por validacion CSRF", {
     origin: requestOrigin,
     allowedOrigins,
+    serverOrigin,
   });
 
   return res.status(403).json({

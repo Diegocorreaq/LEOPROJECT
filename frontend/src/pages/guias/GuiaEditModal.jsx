@@ -1,12 +1,29 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ESTADO_CFG } from "./GuiaStatusBadge";
+import { cn } from "@/lib/utils";
 
-const ESTADOS_OPCIONES = Object.entries(ESTADO_CFG).map(([value, config]) => ({
-  value,
-  label: config.label,
-}));
+// Solo los dos estados operativos que se persisten en BD.
+const ESTADOS_OPCIONES = [
+  { value: "EN_TRANSITO", label: "En tránsito" },
+  { value: "RECIBIDA",    label: "Recibido" },
+];
+
+// Presets de ancho del modal
+const MODAL_SIZES = {
+  compact: { maxW: "max-w-xl",  label: "Compacto" },
+  normal:  { maxW: "max-w-2xl", label: "Normal" },
+  wide:    { maxW: "max-w-4xl", label: "Amplio" },
+};
+const SIZE_KEYS = ["compact", "normal", "wide"];
+
+function getInitialModalSize() {
+  try {
+    const saved = localStorage.getItem("guia_modal_size");
+    if (saved && MODAL_SIZES[saved]) return saved;
+  } catch (_) {}
+  return "normal";
+}
 
 function formatDate(value) {
   if (!value) return "";
@@ -39,9 +56,15 @@ export default function GuiaEditModal({
   onClose,
   onSubmit,
 }) {
-  const [estado, setEstado] = useState(guia?.estado ?? "EMITIDA");
+  const [estado, setEstado]               = useState(guia?.estado ?? "EN_TRANSITO");
   const [fechaRecepcion, setFechaRecepcion] = useState(formatDate(guia?.fechaRecepcion));
-  const [observaciones, setObservaciones] = useState(guia?.observaciones ?? "");
+  const [observaciones, setObservaciones]  = useState(guia?.observaciones ?? "");
+  const [modalSize, setModalSize]          = useState(getInitialModalSize);
+
+  function handleSizeChange(size) {
+    setModalSize(size);
+    try { localStorage.setItem("guia_modal_size", size); } catch (_) {}
+  }
 
   useEffect(() => {
     if (!open) return undefined;
@@ -50,9 +73,7 @@ export default function GuiaEditModal({
     document.body.style.overflow = "hidden";
 
     function handleKeyDown(event) {
-      if (event.key === "Escape" && !loading) {
-        onClose?.();
-      }
+      if (event.key === "Escape" && !loading) onClose?.();
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -62,20 +83,18 @@ export default function GuiaEditModal({
     };
   }, [loading, onClose, open]);
 
+  if (!open || !guia) return null;
+
   let servicioActual = "Sin vincular";
   if (guia?.servicio) {
     servicioActual =
       guia.servicio.origen || guia.servicio.destino
-        ? `${guia.servicio.origen ?? "-"} -> ${guia.servicio.destino ?? "-"}`
+        ? `${guia.servicio.origen ?? "-"} → ${guia.servicio.destino ?? "-"}`
         : guia.servicio.id;
   }
 
-  if (!open || !guia) return null;
-
   function handleBackdropClick(event) {
-    if (event.target === event.currentTarget && !loading) {
-      onClose?.();
-    }
+    if (event.target === event.currentTarget && !loading) onClose?.();
   }
 
   function handleSubmit(event) {
@@ -87,19 +106,43 @@ export default function GuiaEditModal({
     });
   }
 
+  const { maxW } = MODAL_SIZES[modalSize] ?? MODAL_SIZES.normal;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]"
       onClick={handleBackdropClick}
       role="presentation"
     >
-      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-6 py-5">
-          <h2 className="text-lg font-semibold text-slate-900">Editar guia</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Solo puedes actualizar los datos internos u operativos. La informacion oficial importada
-            desde SUNAT se mantiene en solo lectura.
-          </p>
+      <div className={cn("w-full rounded-2xl border border-slate-200 bg-white shadow-2xl", maxW)}>
+        {/* Cabecera */}
+        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Editar guía</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Solo puedes actualizar datos internos u operativos. La información oficial importada
+              desde SUNAT se mantiene en solo lectura.
+            </p>
+          </div>
+
+          {/* Control de tamaño */}
+          <div className="ml-4 flex shrink-0 items-center rounded border border-slate-200">
+            {SIZE_KEYS.map((sz) => (
+              <button
+                key={sz}
+                onClick={() => handleSizeChange(sz)}
+                title={MODAL_SIZES[sz].label}
+                className={cn(
+                  "px-2 py-1 text-xs font-medium transition-colors",
+                  modalSize === sz
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-400 hover:bg-slate-100",
+                )}
+              >
+                {MODAL_SIZES[sz].label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <form className="space-y-5 px-6 py-5" onSubmit={handleSubmit}>
@@ -110,10 +153,10 @@ export default function GuiaEditModal({
           )}
 
           <div className="grid gap-3 md:grid-cols-2">
-            <ReadOnlyRow label="Guia" value={`${guia.serie}-${guia.numero}`} />
-            <ReadOnlyRow label="Fecha emision" value={formatDisplayDate(guia.fechaEmision)} />
+            <ReadOnlyRow label="Guía" value={`${guia.serie}-${guia.numero}`} />
+            <ReadOnlyRow label="Fecha de emisión" value={formatDisplayDate(guia.fechaEmision)} />
             <ReadOnlyRow label="Servicio vinculado" value={servicioActual} />
-            <ReadOnlyRow label="Vehiculo" value={guia.placaPrincipal ?? "-"} />
+            <ReadOnlyRow label="Vehículo" value={guia.placaPrincipal ?? "-"} />
             <ReadOnlyRow label="Remitente" value={guia.remitenteNombre ?? "-"} />
             <ReadOnlyRow label="Destinatario" value={guia.destinatarioNombre ?? "-"} />
           </div>
@@ -127,16 +170,16 @@ export default function GuiaEditModal({
                 disabled={loading}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-50"
               >
-                {ESTADOS_OPCIONES.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                {ESTADOS_OPCIONES.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Fecha de recepcion</span>
+              <span className="text-sm font-medium text-slate-700">Fecha de recepción</span>
               <input
                 type="date"
                 value={fechaRecepcion}
@@ -155,7 +198,7 @@ export default function GuiaEditModal({
               rows={4}
               maxLength={2000}
               disabled={loading}
-              placeholder="Agrega una observacion interna..."
+              placeholder="Agrega una observación interna..."
               className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-50"
             />
           </label>
