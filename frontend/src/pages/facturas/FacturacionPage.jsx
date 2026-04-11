@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, PackageOpen, Upload } from "lucide-react";
+import { FileText, PackageOpen, Upload, Receipt, X, CheckCircle, AlertTriangle, Clock, CreditCard, Link2Off } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import FacturaListTab from "./FacturaListTab";
@@ -8,39 +8,66 @@ import FacturaBulkImportTab from "./FacturaBulkImportTab";
 import { isFacturaVencida } from "./facturaHelpers";
 
 const TABS = [
-  { key: "lista",    label: "Lista",             icon: FileText },
-  { key: "importar", label: "Importar",           icon: Upload },
-  { key: "masivo",   label: "Importación masiva", icon: PackageOpen },
+  { key: "lista", label: "Lista", icon: FileText },
+  { key: "importar", label: "Importar", icon: Upload },
+  { key: "masivo", label: "Importación masiva", icon: PackageOpen },
 ];
 
-function KpiCard({ label, value, highlight }) {
+function KpiCard({ label, value, highlight, icon: Icon }) {
   const hasValue = value > 0;
+  
+  const colorClasses = {
+    red: {
+      bg: "bg-red-50 border-red-100",
+      text: "text-red-700",
+      icon: "text-red-500",
+    },
+    amber: {
+      bg: "bg-amber-50 border-amber-100",
+      text: "text-amber-700",
+      icon: "text-amber-500",
+    },
+    blue: {
+      bg: "bg-blue-50 border-blue-100",
+      text: "text-blue-700",
+      icon: "text-blue-500",
+    },
+    default: {
+      bg: "bg-slate-50 border-slate-100",
+      text: "text-slate-700",
+      icon: "text-slate-400",
+    },
+  };
+
+  const colors = (highlight && hasValue) ? colorClasses[highlight] : colorClasses.default;
+
   return (
     <div className={cn(
-      "flex flex-col items-start rounded-lg border px-3 py-2 min-w-[88px]",
-      highlight === "red"   && hasValue ? "border-red-100 bg-red-50"     : "",
-      highlight === "amber" && hasValue ? "border-amber-100 bg-amber-50" : "",
-      highlight === "blue"  && hasValue ? "border-blue-100 bg-blue-50"   : "",
-      (!highlight || !hasValue)         ? "border-slate-100 bg-slate-50" : "",
+      "flex items-center gap-3 rounded-xl border px-4 py-3 min-w-[130px] transition-all duration-200 hover:shadow-sm",
+      colors.bg
     )}>
-      <span className={cn(
-        "text-lg font-semibold leading-none tabular-nums",
-        highlight === "red"   && hasValue ? "text-red-700"   : "",
-        highlight === "amber" && hasValue ? "text-amber-700" : "",
-        highlight === "blue"  && hasValue ? "text-blue-700"  : "",
-        (!highlight || !hasValue)         ? "text-slate-700" : "",
-      )}>
-        {value}
-      </span>
-      <span className="mt-1 text-[11px] leading-tight text-slate-500">{label}</span>
+      {Icon && (
+        <div className={cn("shrink-0", colors.icon)}>
+          <Icon className="h-5 w-5" />
+        </div>
+      )}
+      <div className="flex flex-col">
+        <span className={cn(
+          "text-xl font-bold leading-none tabular-nums",
+          colors.text
+        )}>
+          {value}
+        </span>
+        <span className="mt-1 text-xs font-medium text-slate-500 leading-tight">{label}</span>
+      </div>
     </div>
   );
 }
 
 export default function FacturacionPage() {
-  const [tab, setTab]           = useState("lista");
+  const [tab, setTab] = useState("lista");
   const [facturas, setFacturas] = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
 
   function loadFacturas() {
@@ -76,75 +103,114 @@ export default function FacturacionPage() {
   }
 
   const kpis = useMemo(() => ({
-    total:         facturas.length,
-    sinVincular:   facturas.filter((f) => !f.ordenServicioId).length,
-    pendientes:    facturas.filter((f) => f.estadoPago === "PENDIENTE").length,
-    credito:       facturas.filter((f) => f.formaPago === "CREDITO").length,
-    vencidas:      facturas.filter(isFacturaVencida).length,
+    total: facturas.length,
+    sinVincular: facturas.filter((f) => !f.ordenServicioId).length,
+    pendientes: facturas.filter((f) => f.estadoPago === "PENDIENTE").length,
+    credito: facturas.filter((f) => f.formaPago === "CREDITO").length,
+    vencidas: facturas.filter(isFacturaVencida).length,
     conDetraccion: facturas.filter(
       (f) => Number(f.detraccionMonto) > 0 || Number(f.detraccionPorcentaje) > 0
     ).length,
   }), [facturas]);
 
   return (
-    <div className="flex h-full flex-col bg-white">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-8 py-5">
-        <h1 className="text-xl font-semibold text-slate-900">Facturación</h1>
+    <div className="flex h-full flex-col bg-slate-50">
+      {/* Header principal */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="px-4 py-5 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            {/* Título con icono */}
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 shadow-lg">
+                <Receipt className="h-6 w-6 text-amber-400" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">Facturación</h1>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  Gestión de facturas y documentos
+                </p>
+              </div>
+            </div>
 
-        <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
-          {TABS.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => { setTab(item.key); if (item.key !== "lista") setFeedback(""); }}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                tab === item.key ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              <item.icon className="h-3.5 w-3.5" />
-              {item.label}
-            </button>
-          ))}
+            {/* Tabs como botones pill */}
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm">
+              {TABS.map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => { setTab(item.key); if (item.key !== "lista") setFeedback(""); }}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200",
+                    tab === item.key
+                      ? "bg-slate-900 text-white shadow-md"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                  )}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span className="hidden sm:inline">{item.label}</span>
+                  <span className="sm:hidden">
+                    {item.key === "lista" ? "Lista" : item.key === "importar" ? "Importar" : "Masivo"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+
+        {/* KPI strip — visible solo en pestaña lista */}
+        {tab === "lista" && !loading && facturas.length > 0 && (
+          <div className="px-4 pb-5 sm:px-6 lg:px-8">
+            <div className="flex flex-wrap gap-3">
+              <KpiCard label="Total facturas" value={kpis.total} icon={FileText} />
+              <KpiCard label="Sin vincular" value={kpis.sinVincular} highlight="red" icon={Link2Off} />
+              <KpiCard label="Pendientes" value={kpis.pendientes} highlight="amber" icon={Clock} />
+              <KpiCard label="Crédito" value={kpis.credito} highlight="blue" icon={CreditCard} />
+              <KpiCard label="Vencidas" value={kpis.vencidas} highlight="red" icon={AlertTriangle} />
+              <KpiCard label="Con detracción" value={kpis.conDetraccion} highlight="blue" icon={Receipt} />
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* KPI strip — visible solo en pestaña lista */}
-      {tab === "lista" && !loading && facturas.length > 0 && (
-        <div className="shrink-0 border-b bg-slate-50/50 px-8 py-3">
-          <div className="flex flex-wrap gap-2.5">
-            <KpiCard label="Total facturas"  value={kpis.total} />
-            <KpiCard label="Sin vincular"    value={kpis.sinVincular}   highlight="red" />
-            <KpiCard label="Pendientes"      value={kpis.pendientes}    highlight="amber" />
-            <KpiCard label="Crédito"         value={kpis.credito}       highlight="blue" />
-            <KpiCard label="Vencidas"        value={kpis.vencidas}      highlight="red" />
-            <KpiCard label="Con detracción"  value={kpis.conDetraccion} highlight="blue" />
+      {/* Feedback de éxito */}
+      {feedback && tab === "lista" && (
+        <div className="mx-4 mt-4 sm:mx-6 lg:mx-8">
+          <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+              </div>
+              <span className="text-sm font-medium text-emerald-800">{feedback}</span>
+            </div>
+            <button
+              onClick={() => setFeedback("")}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-emerald-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors"
+              aria-label="Cerrar"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
       )}
 
-      {feedback && tab === "lista" && (
-        <div className="border-b border-emerald-100 bg-emerald-50 px-8 py-3 text-sm text-emerald-700">
-          {feedback}
-        </div>
-      )}
-
-      {tab === "lista" ? (
-        <FacturaListTab
-          facturas={facturas}
-          loading={loading}
-          onFacturaUpdated={handleFacturaUpdated}
-          onFacturaDeleted={handleFacturaDeleted}
-        />
-      ) : tab === "importar" ? (
-        <div className="flex-1 overflow-y-auto">
-          <FacturaImportTab onImported={handleImported} />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto">
-          <FacturaBulkImportTab onImported={handleMasivoImported} />
-        </div>
-      )}
+      {/* Contenido */}
+      <div className="flex-1 overflow-hidden">
+        {tab === "lista" ? (
+          <FacturaListTab
+            facturas={facturas}
+            loading={loading}
+            onFacturaUpdated={handleFacturaUpdated}
+            onFacturaDeleted={handleFacturaDeleted}
+          />
+        ) : tab === "importar" ? (
+          <div className="flex-1 overflow-y-auto h-full">
+            <FacturaImportTab onImported={handleImported} />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto h-full">
+            <FacturaBulkImportTab onImported={handleMasivoImported} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
