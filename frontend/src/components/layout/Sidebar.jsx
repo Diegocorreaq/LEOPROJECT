@@ -14,6 +14,7 @@ import {
   LogOut,
   Package,
   X,
+  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -62,7 +63,7 @@ export default function Sidebar({ open, onClose }) {
     <aside
       className={cn(
         // Estilos base compartidos
-        "flex w-64 flex-col bg-slate-900 text-white",
+        "flex w-72 flex-col bg-gradient-to-b from-slate-900 to-slate-950 text-white",
         // Mobile/tablet: fixed overlay con transición
         "fixed inset-y-0 left-0 z-30 transition-transform duration-300 ease-in-out",
         open ? "translate-x-0" : "-translate-x-full",
@@ -71,33 +72,33 @@ export default function Sidebar({ open, onClose }) {
       )}
     >
       {/* ── Logo + botón cerrar (solo mobile) ── */}
-      <div className="flex items-center justify-between border-b border-slate-700 px-6 py-5">
+      <div className="flex items-center justify-between px-6 py-6 border-b border-slate-800/50">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 shadow-lg shadow-amber-500/20">
             <Package className="h-5 w-5 text-white" />
           </div>
           <div>
-            <p className="text-sm font-bold leading-tight tracking-wide text-white">
+            <p className="text-base font-bold leading-tight tracking-tight text-white">
               Grupo Leo
             </p>
-            <p className="text-xs text-slate-400">S.A.C.</p>
+            <p className="text-xs text-slate-400 font-medium">S.A.C.</p>
           </div>
         </div>
         <button
           onClick={onClose}
-          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
+          className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors lg:hidden"
           aria-label="Cerrar menú"
         >
-          <X className="h-4 w-4" />
+          <X className="h-5 w-5" />
         </button>
       </div>
 
       {/* ── Navegación ── */}
-      <nav className="sidebar-scrollbar flex-1 overflow-y-auto px-3 py-4">
-        <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+      <nav className="sidebar-scrollbar flex-1 overflow-y-auto px-4 py-6">
+        <p className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           Menú principal
         </p>
-        <ul className="space-y-0.5">
+        <ul className="space-y-1">
           {navItems.map(({ label, icon: Icon, href }) => (
             <li key={href}>
               <NavLink
@@ -106,15 +107,29 @@ export default function Sidebar({ open, onClose }) {
                 onClick={handleNavClick}
                 className={({ isActive }) =>
                   cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                    "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     isActive
-                      ? "bg-amber-500 text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                      ? "bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg shadow-amber-500/25"
+                      : "text-slate-300 hover:bg-slate-800/70 hover:text-white"
                   )
                 }
               >
-                {createElement(Icon, { className: "h-4 w-4 shrink-0" })}
-                {label}
+                {({ isActive }) => (
+                  <>
+                    <span className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+                      isActive 
+                        ? "bg-white/20" 
+                        : "bg-slate-800 group-hover:bg-slate-700"
+                    )}>
+                      {createElement(Icon, { className: "h-4 w-4 shrink-0" })}
+                    </span>
+                    <span className="flex-1">{label}</span>
+                    {isActive && (
+                      <ChevronRight className="h-4 w-4 opacity-70" />
+                    )}
+                  </>
+                )}
               </NavLink>
             </li>
           ))}
@@ -122,21 +137,21 @@ export default function Sidebar({ open, onClose }) {
       </nav>
 
       {/* ── Usuario + cerrar sesión ── */}
-      <div className="border-t border-slate-700 p-4">
-        <div className="mb-3 flex items-center gap-3 rounded-lg bg-slate-800 px-3 py-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500 text-sm font-bold text-white">
+      <div className="border-t border-slate-800/50 p-4">
+        <div className="mb-3 flex items-center gap-3 rounded-xl bg-slate-800/50 px-4 py-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-500 text-sm font-bold text-white shadow-md">
             {user?.nombre?.charAt(0).toUpperCase()}
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-white">{user?.nombre}</p>
-            <p className="text-xs text-slate-400">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-white">{user?.nombre}</p>
+            <p className="text-xs text-slate-400 font-medium">
               {ROL_LABELS[user?.rol] ?? user?.rol}
             </p>
           </div>
         </div>
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition-all duration-200 hover:bg-slate-800 hover:text-white hover:border-slate-600"
         >
           <LogOut className="h-4 w-4" />
           Cerrar sesión
