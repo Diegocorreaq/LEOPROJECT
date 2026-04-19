@@ -30,7 +30,7 @@ export default function GuiasPage() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-slate-50">
+    <div className="flex h-full min-h-0 flex-col bg-slate-50">
       {/* Header principal */}
       <div className="bg-white border-b border-slate-200">
         <div className="px-4 py-5 sm:px-6 lg:px-8">
@@ -98,15 +98,17 @@ export default function GuiasPage() {
       )}
 
       {/* Contenido */}
-      <div className="flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "lista" ? (
-          <GuiaListTab refreshTrigger={refreshTrigger} />
+          <div className="min-h-0 flex-1">
+            <GuiaListTab refreshTrigger={refreshTrigger} />
+          </div>
         ) : tab === "importar" ? (
-          <div className="flex-1 overflow-y-auto h-full">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <GuiaImportTab onImported={handleImported} />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto h-full">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <GuiaBulkImportTab onImported={handleMasivoImported} />
           </div>
         )}

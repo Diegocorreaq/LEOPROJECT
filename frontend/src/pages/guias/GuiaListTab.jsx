@@ -171,7 +171,7 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Barra de filtros */}
       <div className="shrink-0 space-y-2 border-b px-4 py-3 sm:px-6">
         {/* Fila 1: búsqueda + fechas */}
@@ -266,10 +266,10 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
       )}
 
       {/* Cuerpo principal: tabla + drawer */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Tabla + cards */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-auto">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-auto">
             {loading ? (
               <div className="flex h-48 items-center justify-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-slate-700" />
