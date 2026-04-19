@@ -114,7 +114,7 @@ export default function FacturacionPage() {
   }), [facturas]);
 
   return (
-    <div className="flex h-full flex-col bg-slate-50">
+    <div className="flex h-full min-h-0 flex-col bg-slate-50">
       {/* Header principal */}
       <div className="bg-white border-b border-slate-200">
         <div className="px-4 py-5 sm:px-6 lg:px-8">
@@ -193,7 +193,7 @@ export default function FacturacionPage() {
       )}
 
       {/* Contenido */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {tab === "lista" ? (
           <FacturaListTab
             facturas={facturas}
@@ -202,11 +202,11 @@ export default function FacturacionPage() {
             onFacturaDeleted={handleFacturaDeleted}
           />
         ) : tab === "importar" ? (
-          <div className="flex-1 overflow-y-auto h-full">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <FacturaImportTab onImported={handleImported} />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto h-full">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <FacturaBulkImportTab onImported={handleMasivoImported} />
           </div>
         )}

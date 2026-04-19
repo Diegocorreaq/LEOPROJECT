@@ -143,7 +143,7 @@ export default function LiquidacionesPage() {
   }, [liquidaciones]);
 
   return (
-    <div className="flex h-full flex-col bg-slate-50">
+    <div className="flex h-full min-h-0 flex-col bg-slate-50">
       {/* Header principal */}
       <div className="bg-white border-b border-slate-200">
         <div className="px-4 py-5 sm:px-6 lg:px-8">
@@ -228,7 +228,7 @@ export default function LiquidacionesPage() {
       )}
 
       {/* Contenido */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {isFormView ? (
           <LiquidacionFormTab
             key={`${isEditView ? "edit" : "create"}-${liquidacionId || servicioId || "nuevo"}-${focusService ? "service" : "general"}`}

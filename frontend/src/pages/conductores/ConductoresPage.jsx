@@ -120,7 +120,7 @@ export default function ConductoresPage() {
   const statusAction = conductorToToggle?.activo ? "desactivar" : "activar";
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="flex items-center justify-between border-b px-8 py-5">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Conductores</h1>
@@ -161,7 +161,7 @@ export default function ConductoresPage() {
         <div className="border-b bg-amber-50 px-8 py-3 text-sm text-amber-700">{feedback}</div>
       )}
 
-      <div className="flex-1 overflow-auto px-8 py-6">
+      <div className="min-h-0 flex-1 overflow-auto px-8 py-6">
         {loading ? (
           <div className="flex h-48 items-center justify-center">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-slate-700" />

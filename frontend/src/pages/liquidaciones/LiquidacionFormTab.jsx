@@ -241,7 +241,7 @@ export default function LiquidacionFormTab({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 px-8 py-6">
+    <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 px-8 py-6">
       <form className="mx-auto max-w-6xl space-y-6" onSubmit={handleSubmit}>
         {error && (
           <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

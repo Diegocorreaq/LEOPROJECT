@@ -74,7 +74,7 @@ export default function LiquidacionListTab({
   }, [favorFilter, liquidaciones, monthFilter, search, statusTab]);
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-8">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full sm:w-auto">
@@ -126,8 +126,8 @@ export default function LiquidacionListTab({
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-auto">
           {loading ? (
             <div className="flex h-48 items-center justify-center">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-slate-700" />

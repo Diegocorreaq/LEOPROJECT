@@ -98,11 +98,9 @@ export default function GuiasPage() {
       )}
 
       {/* Contenido */}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {tab === "lista" ? (
-          <div className="min-h-0 flex-1">
-            <GuiaListTab refreshTrigger={refreshTrigger} />
-          </div>
+          <GuiaListTab refreshTrigger={refreshTrigger} />
         ) : tab === "importar" ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <GuiaImportTab onImported={handleImported} />

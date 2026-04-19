@@ -182,7 +182,7 @@ export default function ServiciosPage() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-slate-50">
+    <div className="flex h-full min-h-0 flex-col bg-slate-50">
       {/* Header principal */}
       <div className="bg-white border-b border-slate-200">
         <div className="px-4 py-5 sm:px-6 lg:px-8">
@@ -272,8 +272,8 @@ export default function ServiciosPage() {
       </div>
 
       {/* Contenido principal */}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-auto">
           {loading ? (
             <div className="flex h-64 items-center justify-center">
               <div className="flex flex-col items-center gap-3">
@@ -453,7 +453,7 @@ function DetailPanel({ servicio, onClose, navigate }) {
     : `/liquidaciones?action=nueva&servicioId=${servicio.id}`;
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex h-full min-h-0 flex-col bg-white">
       {/* Header del panel */}
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 bg-slate-50">
         <div className="flex items-center gap-3">
@@ -474,7 +474,7 @@ function DetailPanel({ servicio, onClose, navigate }) {
       </div>
 
       {/* Contenido scrolleable */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-6 px-5 py-5">
           {/* Servicio */}
           <Section label="Servicio" icon={<ClipboardList className="h-4 w-4" />}>

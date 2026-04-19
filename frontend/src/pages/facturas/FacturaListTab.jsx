@@ -165,7 +165,7 @@ export default function FacturaListTab({ facturas, loading, onFacturaUpdated, on
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 
       {/* Barra de búsqueda + filtros rápidos */}
       <div className="flex flex-wrap items-center gap-3 border-b bg-white px-4 py-2.5 sm:px-6">
@@ -266,8 +266,8 @@ export default function FacturaListTab({ facturas, loading, onFacturaUpdated, on
       </div>
 
       {/* Tabla + drawer */}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-auto">
           {loading ? (
             <div className="flex h-48 items-center justify-center">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-slate-700" />
