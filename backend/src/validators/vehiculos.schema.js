@@ -62,9 +62,12 @@ const propietarioSchema = z.object({
     .min(2, "Razon social demasiado corta")
     .max(300, "Razon social demasiado larga"),
   ruc: z
-    .string({ required_error: "El RUC del propietario es requerido" })
+    .string({ required_error: "El documento del propietario es requerido" })
     .trim()
-    .regex(/^\d{11}$/, "El RUC del propietario debe tener 11 digitos"),
+    .regex(
+      /^\d{8}$|^\d{11}$/,
+      "El documento del propietario debe tener 8 digitos (DNI) o 11 digitos (RUC)",
+    ),
   contacto: optionalTrimmedString(200, "Contacto"),
   telefono: optionalTrimmedString(30, "Telefono"),
 });

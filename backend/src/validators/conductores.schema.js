@@ -1,7 +1,31 @@
 const { z } = require("zod");
 
-const TIPOS_DOCUMENTO = ["DNI", "CE", "PASAPORTE", "RUC"];
+const TIPOS_DOCUMENTO = ["DNI", "CE", "DOCUMENTO DE IDENTIDAD EXTRANJERO"];
 const TIPOS_CONDUCTOR = ["PROPIO", "SUBCONTRATADO"];
+
+function validateDocumentoConductor(tipoDocumento, nroDocumento) {
+  const value = (nroDocumento ?? "").trim();
+
+  if (tipoDocumento === "DNI") {
+    return /^\d{8}$/.test(value)
+      ? null
+      : "El DNI debe tener exactamente 8 digitos numericos.";
+  }
+
+  if (tipoDocumento === "CE") {
+    return /^\d{9}$/.test(value)
+      ? null
+      : "El CE debe tener exactamente 9 digitos numericos.";
+  }
+
+  if (tipoDocumento === "DOCUMENTO DE IDENTIDAD EXTRANJERO") {
+    return /^\d{1,20}$/.test(value)
+      ? null
+      : "El documento de identidad extranjero debe contener solo digitos y tener maximo 20.";
+  }
+
+  return "Tipo de documento invalido para conductor.";
+}
 
 function optionalTrimmedString(max, label) {
   return z.preprocess(
@@ -40,7 +64,10 @@ const createConductorSchema = z
     tipoDocumento: z.enum(TIPOS_DOCUMENTO, {
       errorMap: () => ({ message: `Tipo de documento invalido. Valores: ${TIPOS_DOCUMENTO.join(", ")}` }),
     }),
-    nroDocumento: z.string({ required_error: "El numero de documento es requerido" }).trim().min(6, "Numero de documento demasiado corto").max(20, "Numero de documento demasiado largo"),
+    nroDocumento: z
+      .string({ required_error: "El numero de documento es requerido" })
+      .trim()
+      .regex(/^\d{1,20}$/, "El numero de documento debe contener solo digitos y tener maximo 20."),
     licencia: optionalTrimmedString(20, "Licencia"),
     tipo: z.enum(TIPOS_CONDUCTOR, {
       errorMap: () => ({ message: `Tipo de conductor invalido. Valores: ${TIPOS_CONDUCTOR.join(", ")}` }),
@@ -65,18 +92,11 @@ const createConductorSchema = z
       });
     }
 
-    if (data.tipoDocumento === "DNI" && !/^\d{8}$/.test(data.nroDocumento)) {
+    const documentoError = validateDocumentoConductor(data.tipoDocumento, data.nroDocumento);
+    if (documentoError) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "El DNI debe tener exactamente 8 digitos.",
-        path: ["nroDocumento"],
-      });
-    }
-
-    if (data.tipoDocumento === "RUC" && !/^\d{11}$/.test(data.nroDocumento)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "El RUC debe tener exactamente 11 digitos.",
+        message: documentoError,
         path: ["nroDocumento"],
       });
     }
@@ -88,7 +108,11 @@ const updateConductorSchema = z
     apPaterno: z.string().trim().min(2, "Apellido paterno demasiado corto").max(100, "Apellido paterno demasiado largo").optional(),
     apMaterno: optionalTrimmedString(100, "Apellido materno"),
     tipoDocumento: z.enum(TIPOS_DOCUMENTO).optional(),
-    nroDocumento: z.string().trim().min(6, "Numero de documento demasiado corto").max(20, "Numero de documento demasiado largo").optional(),
+    nroDocumento: z
+      .string()
+      .trim()
+      .regex(/^\d{1,20}$/, "El numero de documento debe contener solo digitos y tener maximo 20.")
+      .optional(),
     licencia: optionalTrimmedString(20, "Licencia"),
     tipo: z.enum(TIPOS_CONDUCTOR).optional(),
     activo: z.boolean().optional(),
@@ -103,18 +127,12 @@ const updateConductorSchema = z
       });
     }
 
-    if (data.tipoDocumento === "DNI" && data.nroDocumento && !/^\d{8}$/.test(data.nroDocumento)) {
+    if (data.tipoDocumento && data.nroDocumento !== undefined) {
+      const documentoError = validateDocumentoConductor(data.tipoDocumento, data.nroDocumento);
+      if (!documentoError) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "El DNI debe tener exactamente 8 digitos.",
-        path: ["nroDocumento"],
-      });
-    }
-
-    if (data.tipoDocumento === "RUC" && data.nroDocumento && !/^\d{11}$/.test(data.nroDocumento)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "El RUC debe tener exactamente 11 digitos.",
+        message: documentoError,
         path: ["nroDocumento"],
       });
     }
@@ -125,4 +143,5 @@ module.exports = {
   updateConductorSchema,
   TIPOS_DOCUMENTO,
   TIPOS_CONDUCTOR,
+  validateDocumentoConductor,
 };

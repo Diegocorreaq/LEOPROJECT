@@ -152,7 +152,7 @@ async function resolveSubcontratadoResources(db, subcontratado) {
         nombre: conductorInput.nombre,
         apPaterno: conductorInput.apPaterno,
         apMaterno: conductorInput.apMaterno ?? null,
-        tipoDocumento: conductorInput.tipoDocumento ?? "DNI",
+        tipoDocumento: conductorInput.tipoDocumento,
         nroDocumento: conductorInput.nroDocumento,
         licencia: conductorInput.licencia ?? null,
         tipo: "SUBCONTRATADO",

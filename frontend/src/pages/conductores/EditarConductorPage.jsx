@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { ConductorFormPage } from "@/pages/conductores/NuevoConductorPage";
+import { isTipoDocumentoConductorValido } from "@/lib/conductorDocumento";
 
 function mapApiErrors(error) {
   if (!(error instanceof ApiError)) return [];
@@ -14,6 +15,7 @@ export default function EditarConductorPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [form, setForm] = useState(null);
+  const [initialDocumento, setInitialDocumento] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -42,6 +44,10 @@ export default function EditarConductorPage() {
             telefono: conductor.propietarioSubcontratado?.telefono ?? "",
           },
         });
+        setInitialDocumento({
+          tipoDocumento: conductor.tipoDocumento ?? "DNI",
+          nroDocumento: (conductor.nroDocumento ?? "").trim(),
+        });
       })
       .catch((error) => {
         if (!active) return;
@@ -57,7 +63,19 @@ export default function EditarConductorPage() {
   }, [id]);
 
   async function handleSubmit() {
-    if (!form) return;
+    if (!form || !initialDocumento) return;
+
+    const tipoDocumentoValido = isTipoDocumentoConductorValido(form.tipoDocumento);
+    const documentoActual = form.nroDocumento.trim();
+    const documentoLegacySinCambios = !tipoDocumentoValido
+      && form.tipoDocumento === initialDocumento.tipoDocumento
+      && documentoActual === initialDocumento.nroDocumento;
+
+    if (!tipoDocumentoValido && !documentoLegacySinCambios) {
+      setSubmitError("Selecciona un tipo de documento valido para conductor.");
+      setSubmitDetails([]);
+      return;
+    }
 
     setSubmitting(true);
     setSubmitError("");
@@ -68,8 +86,6 @@ export default function EditarConductorPage() {
         nombre: form.nombre.trim(),
         apPaterno: form.apPaterno.trim(),
         apMaterno: form.apMaterno.trim() || null,
-        tipoDocumento: form.tipoDocumento,
-        nroDocumento: form.nroDocumento.trim(),
         licencia: form.licencia.trim() || null,
         tipo: form.tipo,
         activo: form.estado === "ACTIVO",
@@ -82,6 +98,11 @@ export default function EditarConductorPage() {
           },
         }),
       };
+
+      if (tipoDocumentoValido) {
+        payload.tipoDocumento = form.tipoDocumento;
+        payload.nroDocumento = documentoActual;
+      }
 
       const updated = await api.put(`/conductores/${id}`, payload);
       navigate(`/conductores/${updated.id}`);
@@ -116,6 +137,7 @@ export default function EditarConductorPage() {
       mode="edit"
       form={form}
       setForm={setForm}
+      initialDocumento={initialDocumento}
       onSubmit={handleSubmit}
       submitting={submitting}
       submitError={submitError}

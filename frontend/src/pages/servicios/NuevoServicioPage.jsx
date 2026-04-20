@@ -11,6 +11,12 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import {
+  TIPOS_DOCUMENTO_CONDUCTOR,
+  getDocumentoConductorConfig,
+  sanitizeDocumentoConductor,
+  validateDocumentoConductor,
+} from "@/lib/conductorDocumento";
 import ClienteBlock from "@/components/servicios/ClienteBlock";
 import PlacaAutocomplete from "@/components/servicios/PlacaAutocomplete";
 import ConductorAutocomplete from "@/components/servicios/ConductorAutocomplete";
@@ -78,6 +84,20 @@ export default function NuevoServicioPage() {
 
   const updSub = (sec, k, v) =>
     setForm(f => ({ ...f, sub: { ...f.sub, [sec]: { ...f.sub[sec], [k]: v } } }));
+
+  function handleSubConductorTipoDocumentoChange(tipoDocumento) {
+    setForm((current) => ({
+      ...current,
+      sub: {
+        ...current.sub,
+        conductor: {
+          ...current.sub.conductor,
+          tipoDocumento,
+          nroDocumento: sanitizeDocumentoConductor(current.sub.conductor.nroDocumento, tipoDocumento),
+        },
+      },
+    }));
+  }
 
   function selVehiculo(veh) {
     setForm(f => ({
@@ -189,10 +209,11 @@ export default function NuevoServicioPage() {
     conductor: esPropio ? !!form.conductorId : (
       !!form.sub.conductor.nombre.trim() &&
       !!form.sub.conductor.apPaterno.trim() &&
-      !!form.sub.conductor.nroDocumento.trim()
+      validateDocumentoConductor(form.sub.conductor.tipoDocumento, form.sub.conductor.nroDocumento)
     ),
   };
   const allOk = Object.values(checks).every(Boolean);
+  const subConductorDocConfig = getDocumentoConductorConfig(form.sub.conductor.tipoDocumento);
 
   // ── Submit ────────────────────────────────────────────────────────────────────
 
@@ -446,9 +467,22 @@ export default function NuevoServicioPage() {
                 <div className="space-y-3">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Empresa</p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="RUC empresa">
-                      <Input maxLength={11} value={form.sub.empresa.ruc}
-                        onChange={e => updSub("empresa", "ruc", e.target.value)} />
+                    <Field label="DNI / RUC empresa">
+                      <Input
+                        inputMode="numeric"
+                        maxLength={11}
+                        value={form.sub.empresa.ruc}
+                        onChange={e => updSub("empresa", "ruc", e.target.value.replace(/\D/g, "").slice(0, 11))}
+                        placeholder="8 dígitos (DNI) o 11 (RUC)"
+                      />
+                      {(() => {
+                        const v = form.sub.empresa.ruc;
+                        if (!v) return null;
+                        if (/^\d{8}$/.test(v)) return <p className="mt-1 text-xs text-emerald-600">DNI ✓</p>;
+                        if (/^\d{11}$/.test(v)) return <p className="mt-1 text-xs text-emerald-600">RUC ✓</p>;
+                        if (v.length > 0 && v.length < 8) return null;
+                        return <p className="mt-1 text-xs text-amber-600">Longitud inválida — use 8 (DNI) o 11 (RUC)</p>;
+                      })()}
                     </Field>
                     <Field label="Razón social">
                       <Input value={form.sub.empresa.razonSocial}
@@ -522,13 +556,31 @@ export default function NuevoServicioPage() {
                       <Input value={form.sub.conductor.apMaterno}
                         onChange={e => updSub("conductor", "apMaterno", e.target.value)} />
                     </Field>
-                    <Field label="Nro documento (DNI 8 dígitos)" required>
+                    <Field label="Tipo de documento" required>
+                      <Select value={form.sub.conductor.tipoDocumento} onValueChange={handleSubConductorTipoDocumentoChange}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {TIPOS_DOCUMENTO_CONDUCTOR.map((tipoDocumento) => (
+                            <SelectItem key={tipoDocumento} value={tipoDocumento}>{tipoDocumento}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Nro documento" required>
                       <Input
                         value={form.sub.conductor.nroDocumento}
-                        onChange={e => updSub("conductor", "nroDocumento", e.target.value)}
-                        placeholder="Ej: 12345678"
+                        onChange={e => updSub(
+                          "conductor",
+                          "nroDocumento",
+                          sanitizeDocumentoConductor(e.target.value, form.sub.conductor.tipoDocumento),
+                        )}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={subConductorDocConfig.maxLength}
+                        placeholder={subConductorDocConfig.placeholder}
                       />
-                      <p className="text-xs text-slate-400 mt-1">8 dígitos numéricos = DNI automático</p>
+                      <p className="text-xs text-slate-400">{subConductorDocConfig.hint}</p>
                     </Field>
                   </div>
                 </div>

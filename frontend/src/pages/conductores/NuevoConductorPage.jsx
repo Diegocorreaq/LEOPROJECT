@@ -13,13 +13,20 @@ import {
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  TIPOS_DOCUMENTO_CONDUCTOR,
+  getDocumentoConductorConfig,
+  getDocumentoConductorError,
+  isTipoDocumentoConductorValido,
+  sanitizeDocumentoConductor,
+  validateDocumentoConductor,
+} from "@/lib/conductorDocumento";
 
 const TIPOS = [
   { value: "PROPIO", label: "Propio" },
   { value: "SUBCONTRATADO", label: "Subcontratado" },
 ];
 
-const TIPOS_DOCUMENTO = ["DNI", "CE", "PASAPORTE", "RUC"];
 const ESTADOS = [
   { value: "ACTIVO", label: "Activo" },
   { value: "INACTIVO", label: "Inactivo" },
@@ -42,20 +49,13 @@ const INITIAL_FORM = {
   },
 };
 
-function validateDocumento(tipoDocumento, nroDocumento) {
-  const value = nroDocumento.trim();
-  if (!value) return false;
-  if (tipoDocumento === "DNI") return /^\d{8}$/.test(value);
-  if (tipoDocumento === "RUC") return /^\d{11}$/.test(value);
-  return value.length >= 6;
-}
-
 function validateForm(form) {
   const errors = [];
   if (!form.nombre.trim()) errors.push("El nombre es obligatorio.");
   if (!form.apPaterno.trim()) errors.push("El apellido paterno es obligatorio.");
-  if (!validateDocumento(form.tipoDocumento, form.nroDocumento)) {
-    errors.push("El numero de documento no es valido para el tipo seleccionado.");
+  const documentoError = getDocumentoConductorError(form.tipoDocumento, form.nroDocumento);
+  if (documentoError) {
+    errors.push(documentoError);
   }
   if (form.tipo === "SUBCONTRATADO") {
     if (!form.propietario.razonSocial.trim()) {
@@ -106,16 +106,28 @@ export function ConductorFormPage({
   submitting,
   submitError,
   submitDetails = [],
+  initialDocumento = null,
 }) {
   const navigate = useNavigate();
+  const tipoDocumentoLegacy = !isTipoDocumentoConductorValido(form.tipoDocumento)
+    ? form.tipoDocumento
+    : null;
+  const tipoDocumentoOptions = tipoDocumentoLegacy
+    ? [...TIPOS_DOCUMENTO_CONDUCTOR, tipoDocumentoLegacy]
+    : TIPOS_DOCUMENTO_CONDUCTOR;
+  const documentoConfig = getDocumentoConductorConfig(form.tipoDocumento);
+  const legacyDocumentoUnchanged = Boolean(initialDocumento)
+    && Boolean(tipoDocumentoLegacy)
+    && initialDocumento.tipoDocumento === form.tipoDocumento
+    && initialDocumento.nroDocumento === form.nroDocumento.trim();
   const checks = useMemo(() => ({
     nombre: Boolean(form.nombre.trim()),
     apPaterno: Boolean(form.apPaterno.trim()),
-    documento: validateDocumento(form.tipoDocumento, form.nroDocumento),
+    documento: validateDocumentoConductor(form.tipoDocumento, form.nroDocumento) || legacyDocumentoUnchanged,
     propietario: form.tipo === "PROPIO"
       ? true
       : Boolean(form.propietario.razonSocial.trim()) && /^\d{11}$/.test(form.propietario.ruc.trim()),
-  }), [form]);
+  }), [form, legacyDocumentoUnchanged]);
 
   const allValid = Object.values(checks).every(Boolean);
 
@@ -130,6 +142,16 @@ export function ConductorFormPage({
         ...current.propietario,
         [field]: value,
       },
+    }));
+  }
+
+  function handleTipoDocumentoChange(tipoDocumento) {
+    setForm((current) => ({
+      ...current,
+      tipoDocumento,
+      nroDocumento: isTipoDocumentoConductorValido(tipoDocumento)
+        ? sanitizeDocumentoConductor(current.nroDocumento, tipoDocumento)
+        : current.nroDocumento,
     }));
   }
 
@@ -184,16 +206,38 @@ export function ConductorFormPage({
               <Field label="Apellido materno">
                 <Input value={form.apMaterno} onChange={(event) => updateField("apMaterno", event.target.value)} />
               </Field>
-              <Field label="Tipo documento">
-                <Select value={form.tipoDocumento} onValueChange={(value) => updateField("tipoDocumento", value)}>
+              <Field label="Tipo de documento" required>
+                <Select value={form.tipoDocumento} onValueChange={handleTipoDocumentoChange}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {TIPOS_DOCUMENTO.map((tipoDocumento) => <SelectItem key={tipoDocumento} value={tipoDocumento}>{tipoDocumento}</SelectItem>)}
+                    {tipoDocumentoOptions.map((tipoDocumento) => (
+                      <SelectItem key={tipoDocumento} value={tipoDocumento}>
+                        {tipoDocumentoLegacy === tipoDocumento ? `${tipoDocumento} (LEGADO)` : tipoDocumento}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Numero documento" required>
-                <Input value={form.nroDocumento} onChange={(event) => updateField("nroDocumento", event.target.value.trim())} inputMode="numeric" />
+              <Field label="Nro documento" required>
+                <Input
+                  value={form.nroDocumento}
+                  onChange={(event) => updateField(
+                    "nroDocumento",
+                    isTipoDocumentoConductorValido(form.tipoDocumento)
+                      ? sanitizeDocumentoConductor(event.target.value, form.tipoDocumento)
+                      : event.target.value,
+                  )}
+                  type="text"
+                  inputMode={isTipoDocumentoConductorValido(form.tipoDocumento) ? "numeric" : undefined}
+                  pattern={isTipoDocumentoConductorValido(form.tipoDocumento) ? "[0-9]*" : undefined}
+                  maxLength={isTipoDocumentoConductorValido(form.tipoDocumento) ? documentoConfig.maxLength : 30}
+                  placeholder={isTipoDocumentoConductorValido(form.tipoDocumento) ? documentoConfig.placeholder : "Selecciona un tipo de documento valido"}
+                />
+                <p className={cn("text-xs", isTipoDocumentoConductorValido(form.tipoDocumento) ? "text-slate-400" : "text-amber-600")}>
+                  {isTipoDocumentoConductorValido(form.tipoDocumento)
+                    ? documentoConfig.hint
+                    : "Tipo legado detectado. Selecciona un tipo valido para actualizar el documento."}
+                </p>
               </Field>
               <Field label="Licencia">
                 <Input value={form.licencia} onChange={(event) => updateField("licencia", event.target.value)} />
@@ -255,7 +299,7 @@ export function ConductorFormPage({
           <div className="rounded-xl border bg-white p-5 shadow-sm">
             <h2 className="mb-4 font-semibold text-slate-900">Campos requeridos</h2>
             <ChecklistItem ok={checks.nombre} label="Nombre completo base" />
-            <ChecklistItem ok={checks.documento} label="Documento valido" />
+            <ChecklistItem ok={checks.documento} label="Documento valido segun tipo" />
             <ChecklistItem ok={checks.propietario} label="Empresa requerida si es subcontratado" />
           </div>
         </div>

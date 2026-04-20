@@ -12,6 +12,7 @@ const {
   updateConductorSchema,
   TIPOS_DOCUMENTO,
   TIPOS_CONDUCTOR,
+  validateDocumentoConductor,
 } = require("../validators/conductores.schema");
 const {
   booleanQueryField,
@@ -257,6 +258,18 @@ router.put("/:id", async (req, res, next) => {
 
     if (!actual) {
       return res.status(404).json({ error: "Conductor no encontrado." });
+    }
+
+    if (body.tipoDocumento !== undefined || body.nroDocumento !== undefined) {
+      const tipoDocumentoFinal = body.tipoDocumento ?? actual.tipoDocumento;
+      const nroDocumentoFinal = body.nroDocumento ?? actual.nroDocumento;
+      const documentoError = validateDocumentoConductor(tipoDocumentoFinal, nroDocumentoFinal);
+      if (documentoError) {
+        return res.status(400).json({
+          error: documentoError,
+          detalles: [{ campo: "nroDocumento", mensaje: documentoError }],
+        });
+      }
     }
 
     if (body.nroDocumento && body.nroDocumento !== actual.nroDocumento) {

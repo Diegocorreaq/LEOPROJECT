@@ -8,10 +8,14 @@ const {
   paginationQuerySchema,
   stringQueryField,
 } = require("./common.schema");
+const {
+  TIPOS_DOCUMENTO: TIPOS_DOCUMENTO_CONDUCTOR,
+  validateDocumentoConductor,
+} = require("./conductores.schema");
 
 const TIPOS_CONTRATO = ["PROPIO", "SUBCONTRATADO"];
 const TIPOS_UNIDAD = ["CAMION", "TRACTO", "FURGON", "PLATAFORMA", "VOLQUETE", "CISTERNA", "OTRO", "CAMIONETA", "AUTO", "FURGON 2TN", "FURGON 10TN", "BARANDA REBATIBLE 2TN", "BARANDA REBATIBLE 10TN", "CAMABAJA"];
-const TIPOS_DOCUMENTO = ["DNI", "RUC", "CE", "PASAPORTE"];
+const TIPOS_DOCUMENTO = TIPOS_DOCUMENTO_CONDUCTOR;
 const UBIGEO_REGEX = /^\d{6}$/;
 
 const estadoServicioSchema = z.preprocess(
@@ -34,7 +38,10 @@ const estadoServicioQuerySchema = z.preprocess(
 
 const empresaSubSchema = z.object({
   razonSocial: z.string().trim().min(2).max(300),
-  ruc: z.string().trim().regex(/^\d{11}$/, "RUC de empresa debe tener 11 digitos"),
+  ruc: z.string().trim().regex(
+    /^\d{8}$|^\d{11}$/,
+    "Documento de empresa debe tener 8 digitos (DNI) o 11 digitos (RUC)",
+  ),
   contacto: z.string().trim().max(200).optional().nullable(),
   telefono: z.string().trim().max(30).optional().nullable(),
 }).strict();
@@ -49,21 +56,21 @@ const conductorSubSchema = z.object({
   nombre: z.string().trim().min(1).max(100),
   apPaterno: z.string().trim().min(1).max(100),
   apMaterno: z.string().trim().max(100).optional().nullable(),
-  tipoDocumento: z.enum(TIPOS_DOCUMENTO).optional().default("DNI"),
-  nroDocumento: z.string().trim().min(8).max(20),
+  tipoDocumento: z.enum(TIPOS_DOCUMENTO, {
+    required_error: "El tipo de documento del conductor es requerido",
+  }),
+  nroDocumento: z.string().trim().regex(/^\d{1,20}$/, "El numero de documento debe contener solo digitos y tener maximo 20"),
   licencia: z.string().trim().max(20).optional().nullable(),
 }).strict().superRefine((data, ctx) => {
-  if (data.nroDocumento.length === 8 && !/^\d{8}$/.test(data.nroDocumento)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Un documento de 8 caracteres debe contener solo dígitos (DNI).",
-      path: ["nroDocumento"],
-    });
-  }
-}).transform((data) => ({
-  ...data,
-  tipoDocumento: /^\d{8}$/.test(data.nroDocumento) ? "DNI" : data.tipoDocumento,
-}));
+  const documentoError = validateDocumentoConductor(data.tipoDocumento, data.nroDocumento);
+  if (!documentoError) return;
+
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: documentoError,
+    path: ["nroDocumento"],
+  });
+});
 
 const subcontratadoSchema = z.object({
   empresa: empresaSubSchema,

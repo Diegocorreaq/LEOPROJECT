@@ -68,8 +68,8 @@ function validateForm(form) {
     if (!form.propietario.razonSocial.trim()) {
       errors.push("La razon social de la empresa propietaria es obligatoria.");
     }
-    if (!/^\d{11}$/.test(form.propietario.ruc.trim())) {
-      errors.push("El RUC de la empresa propietaria debe tener 11 digitos.");
+    if (!(/^\d{8}$|^\d{11}$/).test(form.propietario.ruc.trim())) {
+      errors.push("El documento de la empresa propietaria debe tener 8 digitos (DNI) o 11 digitos (RUC).");
     }
   }
 
@@ -123,7 +123,7 @@ export function VehiculoFormPage({
     tipoUnidad: Boolean(form.tipoUnidad),
     propietario: form.tipo === "PROPIO"
       ? true
-      : Boolean(form.propietario.razonSocial.trim()) && /^\d{11}$/.test(form.propietario.ruc.trim()),
+      : Boolean(form.propietario.razonSocial.trim()) && (/^\d{8}$|^\d{11}$/).test(form.propietario.ruc.trim()),
   }), [form]);
 
   const allValid = Object.values(checks).every(Boolean);
@@ -243,8 +243,22 @@ export function VehiculoFormPage({
                 <Field label="Razon social" required>
                   <Input value={form.propietario.razonSocial} onChange={(event) => updatePropietario("razonSocial", event.target.value)} />
                 </Field>
-                <Field label="RUC" required>
-                  <Input value={form.propietario.ruc} onChange={(event) => updatePropietario("ruc", event.target.value.replace(/\D/g, "").slice(0, 11))} inputMode="numeric" />
+                <Field label="RUC / DNI" required>
+                  <Input
+                    value={form.propietario.ruc}
+                    onChange={(event) => updatePropietario("ruc", event.target.value.replace(/\D/g, "").slice(0, 11))}
+                    inputMode="numeric"
+                    maxLength={11}
+                    placeholder="8 dígitos (DNI) o 11 (RUC)"
+                  />
+                  {(() => {
+                    const v = form.propietario.ruc;
+                    if (!v) return null;
+                    if (/^\d{8}$/.test(v)) return <p className="mt-1 text-xs text-emerald-600">DNI ✓</p>;
+                    if (/^\d{11}$/.test(v)) return <p className="mt-1 text-xs text-emerald-600">RUC ✓</p>;
+                    if (v.length > 0 && v.length < 8) return null;
+                    return <p className="mt-1 text-xs text-amber-600">Longitud inválida — use 8 (DNI) o 11 (RUC)</p>;
+                  })()}
                 </Field>
                 <Field label="Contacto">
                   <Input value={form.propietario.contacto} onChange={(event) => updatePropietario("contacto", event.target.value)} />

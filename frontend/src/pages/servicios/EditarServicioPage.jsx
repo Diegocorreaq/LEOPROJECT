@@ -10,6 +10,13 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import {
+  TIPOS_DOCUMENTO_CONDUCTOR,
+  getDocumentoConductorConfig,
+  isTipoDocumentoConductorValido,
+  sanitizeDocumentoConductor,
+  validateDocumentoConductor,
+} from "@/lib/conductorDocumento";
 import ClienteBlock from "@/components/servicios/ClienteBlock";
 import PlacaAutocomplete from "@/components/servicios/PlacaAutocomplete";
 import ConductorAutocomplete from "@/components/servicios/ConductorAutocomplete";
@@ -70,6 +77,7 @@ function buildForm(s) {
       _placaText:    s.vehiculo?.placa ?? "",
       _carretaText:  s.vehiculo?.placaCarreta ?? "",
       _conductorText: nombreCompleto,
+      _subBase: null,
       sub: {
         empresa:   { ruc: "", razonSocial: "" },
         vehiculo:  { placa: "", placaCarreta: "", tipoUnidad: "" },
@@ -80,6 +88,25 @@ function buildForm(s) {
     const prop = s.vehiculo?.propietarioSubcontratado ?? {};
     const veh  = s.vehiculo ?? {};
     const cond = s.conductor ?? {};
+    const subData = {
+      empresa: {
+        ruc:        prop.ruc        ?? "",
+        razonSocial: prop.razonSocial ?? "",
+      },
+      vehiculo: {
+        placa:       veh.placa        ?? "",
+        placaCarreta: veh.placaCarreta ?? "",
+        tipoUnidad:  veh.tipoUnidad   ?? "",
+      },
+      conductor: {
+        nombre:       cond.nombre       ?? "",
+        apPaterno:    cond.apPaterno    ?? "",
+        apMaterno:    cond.apMaterno    ?? "",
+        tipoDocumento: cond.tipoDocumento ?? "DNI",
+        nroDocumento: cond.nroDocumento ?? "",
+      },
+    };
+
     return {
       fechaServicio,
       estado:        (s.estado === "COMPLETADO" ? "FINALIZADO" : s.estado) ?? "PROGRAMADO",
@@ -104,24 +131,8 @@ function buildForm(s) {
       _placaText:    "",
       _carretaText:  "",
       _conductorText: "",
-      sub: {
-        empresa: {
-          ruc:        prop.ruc        ?? "",
-          razonSocial: prop.razonSocial ?? "",
-        },
-        vehiculo: {
-          placa:       veh.placa        ?? "",
-          placaCarreta: veh.placaCarreta ?? "",
-          tipoUnidad:  veh.tipoUnidad   ?? "",
-        },
-        conductor: {
-          nombre:       cond.nombre       ?? "",
-          apPaterno:    cond.apPaterno    ?? "",
-          apMaterno:    cond.apMaterno    ?? "",
-          tipoDocumento: cond.tipoDocumento ?? "DNI",
-          nroDocumento: cond.nroDocumento ?? "",
-        },
-      },
+      _subBase: subData,
+      sub: subData,
     };
   }
 }
@@ -170,6 +181,20 @@ export default function EditarServicioPage() {
 
   const updSub = (sec, k, v) =>
     setForm(f => ({ ...f, sub: { ...f.sub, [sec]: { ...f.sub[sec], [k]: v } } }));
+
+  function handleSubConductorTipoDocumentoChange(tipoDocumento) {
+    setForm((current) => ({
+      ...current,
+      sub: {
+        ...current.sub,
+        conductor: {
+          ...current.sub.conductor,
+          tipoDocumento,
+          nroDocumento: sanitizeDocumentoConductor(current.sub.conductor.nroDocumento, tipoDocumento),
+        },
+      },
+    }));
+  }
 
   function selVehiculo(veh) {
     setForm(f => ({
@@ -291,6 +316,21 @@ export default function EditarServicioPage() {
   const clientesConfirmados = bloques.filter(b => b.confirmed !== null);
   const origenValido = !!form.origen.trim() && (!!form.origenUbigeoCodigo || (!form._origenBaseCodigo && form.origen === form._origenBaseText));
   const destinoValido = !!form.destino.trim() && (!!form.destinoUbigeoCodigo || (!form._destinoBaseCodigo && form.destino === form._destinoBaseText));
+  const subConductorTipoLegacy = !isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento)
+    ? form.sub.conductor.tipoDocumento
+    : null;
+  const subConductorTipoOptions = subConductorTipoLegacy
+    ? [...TIPOS_DOCUMENTO_CONDUCTOR, subConductorTipoLegacy]
+    : TIPOS_DOCUMENTO_CONDUCTOR;
+  const subConductorDocConfig = getDocumentoConductorConfig(form.sub.conductor.tipoDocumento);
+  const subConductorLegacyUnchanged = Boolean(subConductorTipoLegacy)
+    && form.sub.conductor.tipoDocumento === form._subBase?.conductor?.tipoDocumento
+    && form.sub.conductor.nroDocumento.trim() === (form._subBase?.conductor?.nroDocumento ?? "");
+  const subcontratadoChanged = JSON.stringify(form.sub) !== JSON.stringify(form._subBase);
+  const subConductorDocumentoValido = validateDocumentoConductor(
+    form.sub.conductor.tipoDocumento,
+    form.sub.conductor.nroDocumento,
+  ) || subConductorLegacyUnchanged;
 
   const checks = {
     fecha:     !!form.fechaServicio,
@@ -301,7 +341,8 @@ export default function EditarServicioPage() {
     conductor: esPropio ? !!form.conductorId : (
       !!form.sub.conductor.nombre.trim() &&
       !!form.sub.conductor.apPaterno.trim() &&
-      !!form.sub.conductor.nroDocumento.trim()
+      subConductorDocumentoValido &&
+      (isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento) || !subcontratadoChanged)
     ),
   };
   const allOk = Object.values(checks).every(Boolean);
@@ -339,7 +380,14 @@ export default function EditarServicioPage() {
         payload.vehiculoId  = form.vehiculoId;
         payload.conductorId = form.conductorId;
       } else {
-        payload.subcontratado = form.sub;
+        if (subcontratadoChanged) {
+          const tipoDocumentoValido = isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento);
+          if (!tipoDocumentoValido) {
+            setSaveError("El servicio tiene un tipo de documento legado. Selecciona un tipo valido para actualizar el bloque de conductor.");
+            return;
+          }
+          payload.subcontratado = form.sub;
+        }
       }
 
       await api.put(`/servicios/${id}`, payload);
@@ -565,9 +613,22 @@ export default function EditarServicioPage() {
                 <div className="space-y-3">
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Empresa</p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="RUC empresa">
-                      <Input maxLength={11} value={form.sub.empresa.ruc}
-                        onChange={e => updSub("empresa", "ruc", e.target.value)} />
+                    <Field label="DNI / RUC empresa">
+                      <Input
+                        inputMode="numeric"
+                        maxLength={11}
+                        value={form.sub.empresa.ruc}
+                        onChange={e => updSub("empresa", "ruc", e.target.value.replace(/\D/g, "").slice(0, 11))}
+                        placeholder="8 dígitos (DNI) o 11 (RUC)"
+                      />
+                      {(() => {
+                        const v = form.sub.empresa.ruc;
+                        if (!v) return null;
+                        if (/^\d{8}$/.test(v)) return <p className="mt-1 text-xs text-emerald-600">DNI ✓</p>;
+                        if (/^\d{11}$/.test(v)) return <p className="mt-1 text-xs text-emerald-600">RUC ✓</p>;
+                        if (v.length > 0 && v.length < 8) return null;
+                        return <p className="mt-1 text-xs text-amber-600">Longitud inválida — use 8 (DNI) o 11 (RUC)</p>;
+                      })()}
                     </Field>
                     <Field label="Razón social">
                       <Input value={form.sub.empresa.razonSocial}
@@ -641,13 +702,39 @@ export default function EditarServicioPage() {
                       <Input value={form.sub.conductor.apMaterno}
                         onChange={e => updSub("conductor", "apMaterno", e.target.value)} />
                     </Field>
-                    <Field label="Nro documento (DNI 8 dígitos)" required>
+                    <Field label="Tipo de documento" required>
+                      <Select value={form.sub.conductor.tipoDocumento} onValueChange={handleSubConductorTipoDocumentoChange}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {subConductorTipoOptions.map((tipoDocumento) => (
+                            <SelectItem key={tipoDocumento} value={tipoDocumento}>
+                              {subConductorTipoLegacy === tipoDocumento ? `${tipoDocumento} (LEGADO)` : tipoDocumento}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Nro documento" required>
                       <Input
                         value={form.sub.conductor.nroDocumento}
-                        onChange={e => updSub("conductor", "nroDocumento", e.target.value)}
-                        placeholder="Ej: 12345678"
+                        onChange={e => updSub(
+                          "conductor",
+                          "nroDocumento",
+                          isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento)
+                            ? sanitizeDocumentoConductor(e.target.value, form.sub.conductor.tipoDocumento)
+                            : e.target.value,
+                        )}
+                        type="text"
+                        inputMode={isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento) ? "numeric" : undefined}
+                        pattern={isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento) ? "[0-9]*" : undefined}
+                        maxLength={isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento) ? subConductorDocConfig.maxLength : 30}
+                        placeholder={isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento) ? subConductorDocConfig.placeholder : "Selecciona un tipo de documento valido"}
                       />
-                      <p className="text-xs text-slate-400 mt-1">8 dígitos numéricos = DNI automático</p>
+                      <p className={cn("text-xs", isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento) ? "text-slate-400" : "text-amber-600")}>
+                        {isTipoDocumentoConductorValido(form.sub.conductor.tipoDocumento)
+                          ? subConductorDocConfig.hint
+                          : "Tipo legado detectado. Selecciona un tipo valido para actualizar el conductor."}
+                      </p>
                     </Field>
                   </div>
                 </div>
