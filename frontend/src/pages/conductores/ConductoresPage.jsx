@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import ListSummary from "@/components/ui/ListSummary";
 
 const TIPO_OPTIONS = [
   { value: "ALL", label: "Todos" },
@@ -155,6 +156,11 @@ export default function ConductoresPage() {
             {ESTADO_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
           </SelectContent>
         </Select>
+        <ListSummary
+          total={conductores.length}
+          noun="conductor"
+          className="ml-auto"
+        />
       </div>
 
       {feedback && (

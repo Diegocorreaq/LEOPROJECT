@@ -18,6 +18,7 @@ import ConfirmModal from "@/components/ui/confirm-modal";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { fmtGuiaDate } from "@/lib/dateGuia";
 import GuiaStatusBadge, { VinculoBadge } from "./GuiaStatusBadge";
 import GuiaEditModal from "./GuiaEditModal";
 import GuiaVincularModal from "./GuiaVincularModal";
@@ -25,9 +26,7 @@ import GuiaVincularModal from "./GuiaVincularModal";
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function fechaLarga(iso) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  return d.toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" });
+  return fmtGuiaDate(iso);
 }
 
 function formatNumber(value) {

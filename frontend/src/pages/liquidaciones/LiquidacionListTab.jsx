@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import ListSummary from "@/components/ui/ListSummary";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import LiquidacionDetailDrawer from "./LiquidacionDetailDrawer";
@@ -122,6 +123,12 @@ export default function LiquidacionListTab({
             value={monthFilter}
             onChange={(event) => setMonthFilter(event.target.value)}
             className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <ListSummary
+            total={filtered.length}
+            grandTotal={liquidaciones.length}
+            noun="liquidación"
+            nounPlural="liquidaciones"
           />
         </div>
       </div>

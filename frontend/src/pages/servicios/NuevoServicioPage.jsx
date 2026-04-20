@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Check, Loader2 } from "lucide-react";
+import { todayDateInputValue } from "@/lib/dateOnly";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +25,6 @@ const ESTADOS = [
   { value: "FINALIZADO",  label: "Finalizado" },
   { value: "CANCELADO",   label: "Cancelado" },
 ];
-const TIPOS_DOC = ["DNI", "CE", "RUC"];
 
 function fmtDate(str) {
   if (!str) return "—";
@@ -36,7 +36,7 @@ function fmtDate(str) {
 const mkBloque = () => ({ key: Date.now() + Math.random(), confirmed: null });
 
 const INIT_FORM = {
-  fechaServicio:  new Date().toISOString().split("T")[0],
+  fechaServicio:  todayDateInputValue(),
   estado:         "PROGRAMADO",
   observaciones:  "",
   origen:         "",
@@ -497,7 +497,7 @@ export default function NuevoServicioPage() {
                       >
                         <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                         <SelectContent>
-                          {["CAMION","TRACTO","FURGON","PLATAFORMA","VOLQUETE","CISTERNA","OTRO"].map(t => (
+                          {["CAMION","TRACTO","FURGON","PLATAFORMA","VOLQUETE","CISTERNA","OTRO","CAMIONETA","AUTO","FURGON 2TN","FURGON 10TN","BARANDA REBATIBLE 2TN","BARANDA REBATIBLE 10TN","CAMABAJA"].map(t => (
                             <SelectItem key={t} value={t}>{t}</SelectItem>
                           ))}
                         </SelectContent>
@@ -522,18 +522,13 @@ export default function NuevoServicioPage() {
                       <Input value={form.sub.conductor.apMaterno}
                         onChange={e => updSub("conductor", "apMaterno", e.target.value)} />
                     </Field>
-                    <Field label="Tipo documento">
-                      <Select value={form.sub.conductor.tipoDocumento}
-                        onValueChange={v => updSub("conductor", "tipoDocumento", v)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {TIPOS_DOC.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Nro documento" required>
-                      <Input value={form.sub.conductor.nroDocumento}
-                        onChange={e => updSub("conductor", "nroDocumento", e.target.value)} />
+                    <Field label="Nro documento (DNI 8 dígitos)" required>
+                      <Input
+                        value={form.sub.conductor.nroDocumento}
+                        onChange={e => updSub("conductor", "nroDocumento", e.target.value)}
+                        placeholder="Ej: 12345678"
+                      />
+                      <p className="text-xs text-slate-400 mt-1">8 dígitos numéricos = DNI automático</p>
                     </Field>
                   </div>
                 </div>

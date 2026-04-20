@@ -1,39 +1,23 @@
 import { useEffect, useState } from "react";
 import { Loader2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { fmtGuiaDate } from "@/lib/dateGuia";
 import ServicioSuggestionList from "./ServicioSuggestionList";
 
-// Presets de ancho del modal — comparte preferencia con GuiaEditModal
-const MODAL_SIZES = {
-  compact: { maxW: "max-w-2xl", label: "Compacto" },
-  normal:  { maxW: "max-w-4xl", label: "Normal" },
-  wide:    { maxW: "max-w-6xl", label: "Amplio" },
-};
-const SIZE_KEYS = ["compact", "normal", "wide"];
-
-function getInitialModalSize() {
-  try {
-    const saved = localStorage.getItem("guia_modal_size");
-    if (saved && MODAL_SIZES[saved]) return saved;
-  } catch (_) {}
-  return "normal";
-}
-
-function formatDate(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function SummaryRow({ label, value }) {
+function SummaryCard({ label, value }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
+    <div className="rounded-xl bg-slate-50 px-4 py-3">
       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-      <span className="text-right text-sm text-slate-800">{value || "-"}</span>
+      <p className="mt-1 text-sm font-medium text-slate-800 truncate">{value || "-"}</p>
+    </div>
+  );
+}
+
+function SummaryCardWide({ label, value }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-4 py-3">
+      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <p className="mt-1 text-sm leading-snug text-slate-800 break-words line-clamp-3">{value || "-"}</p>
     </div>
   );
 }
@@ -46,14 +30,8 @@ export default function GuiaVincularModal({
   onClose,
   onSubmit,
 }) {
-  const [servicioSel, setServicioSel]       = useState(null);
-  const [observaciones, setObservaciones]   = useState("");
-  const [modalSize, setModalSize]           = useState(getInitialModalSize);
-
-  function handleSizeChange(size) {
-    setModalSize(size);
-    try { localStorage.setItem("guia_modal_size", size); } catch (_) {}
-  }
+  const [servicioSel, setServicioSel]     = useState(null);
+  const [observaciones, setObservaciones] = useState("");
 
   useEffect(() => {
     if (!open) return undefined;
@@ -87,70 +65,45 @@ export default function GuiaVincularModal({
     });
   }
 
-  const { maxW } = MODAL_SIZES[modalSize] ?? MODAL_SIZES.normal;
+  const ruta = [guia.puntoDeSalida, guia.puntoDeLlegada].filter(Boolean).join(" → ") || "-";
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-6 backdrop-blur-[2px]"
       onClick={handleBackdropClick}
       role="presentation"
     >
-      <div
-        className={cn(
-          "flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl",
-          maxW,
-        )}
-      >
-        {/* Cabecera */}
-        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Vincular a servicio</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Selecciona un servicio para la guía. Los datos importados se conservarán intactos.
-            </p>
-          </div>
+      <div className="flex max-h-[calc(100vh-3rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
 
-          {/* Control de tamaño */}
-          <div className="ml-4 flex shrink-0 items-center rounded border border-slate-200">
-            {SIZE_KEYS.map((sz) => (
-              <button
-                key={sz}
-                onClick={() => handleSizeChange(sz)}
-                title={MODAL_SIZES[sz].label}
-                className={cn(
-                  "px-2 py-1 text-xs font-medium transition-colors",
-                  modalSize === sz
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-400 hover:bg-slate-100",
-                )}
-              >
-                {MODAL_SIZES[sz].label}
-              </button>
-            ))}
-          </div>
+        {/* Cabecera */}
+        <div className="border-b border-slate-100 px-8 py-6">
+          <h2 className="text-lg font-semibold text-slate-900">Vincular a servicio</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Selecciona un servicio para la guía. Los datos importados se conservarán intactos.
+          </p>
         </div>
 
-        <form className="flex min-h-0 flex-1 flex-col px-6 py-5" onSubmit={handleSubmit}>
+        <form className="flex min-h-0 flex-1 flex-col px-8 py-6" onSubmit={handleSubmit}>
           {error && (
-            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
-          {/* Resumen de la guía */}
-          <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryRow label="Guía" value={`${guia.serie}-${guia.numero}`} />
-            <SummaryRow label="Fecha" value={formatDate(guia.fechaEmision)} />
-            <SummaryRow
-              label="Ruta"
-              value={
-                [guia.puntoDeSalida, guia.puntoDeLlegada].filter(Boolean).join(" → ") || "-"
-              }
-            />
-            <SummaryRow label="Placa" value={guia.placaPrincipal ?? "-"} />
+          {/* Resumen de la guía — fila 1: Guía / Fecha / Placa */}
+          <div className="mb-3 grid grid-cols-3 gap-3">
+            <SummaryCard label="Guía"  value={`${guia.serie}-${guia.numero}`} />
+            <SummaryCard label="Fecha" value={fmtGuiaDate(guia.fechaEmision)} />
+            <SummaryCard label="Placa" value={guia.placaPrincipal ?? "-"} />
           </div>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+          {/* Fila 2: Ruta — ancho completo, texto sin truncar */}
+          <div className="mb-6">
+            <SummaryCardWide label="Ruta" value={ruta} />
+          </div>
+
+          {/* Lista de servicios + observaciones */}
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
             <div>
               <p className="mb-2 text-sm font-medium text-slate-700">Selecciona un servicio</p>
               <ServicioSuggestionList
@@ -174,7 +127,8 @@ export default function GuiaVincularModal({
             </label>
           </div>
 
-          <div className="mt-5 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+          {/* Botones */}
+          <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
             <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               Cancelar
             </Button>

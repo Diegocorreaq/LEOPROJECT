@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import ListSummary from "@/components/ui/ListSummary";
 
 const MESES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const MESES_LARGO = [
@@ -165,6 +166,13 @@ export default function ServiciosPage() {
     });
   }, [mes, search, servicios, tab]);
 
+  const mesTotal = useMemo(() => {
+    return servicios.filter((servicio) => {
+      const date = new Date(servicio.fechaServicio);
+      return date.getUTCFullYear() === mes.year && date.getUTCMonth() === mes.month;
+    }).length;
+  }, [mes, servicios]);
+
   function prevMes() {
     setMes((current) =>
       current.month === 0
@@ -268,6 +276,16 @@ export default function ServiciosPage() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Resumen de registros */}
+        <div className="flex items-center justify-end border-t border-slate-100 px-4 py-1.5 sm:px-6 lg:px-8">
+          <ListSummary
+            total={filtered.length}
+            grandTotal={mesTotal}
+            noun="servicio"
+            nounPlural="servicios"
+          />
         </div>
       </div>
 

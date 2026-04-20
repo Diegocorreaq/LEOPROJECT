@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { fmtGuiaDate } from "@/lib/dateGuia";
 import { Button } from "@/components/ui/button";
 import ServicioSuggestionList from "./ServicioSuggestionList";
 import GuiaStatusBadge from "./GuiaStatusBadge";
@@ -301,9 +302,7 @@ export default function GuiaImportTab({ onImported }) {
               {result.guia.serie}-{result.guia.numero}
             </p>
             <p className="text-sm text-slate-400 mt-0.5">
-              {result.guia.fechaEmision
-                ? new Date(result.guia.fechaEmision).toLocaleDateString("es-PE")
-                : "—"}
+              {fmtGuiaDate(result.guia.fechaEmision)}
             </p>
           </div>
 

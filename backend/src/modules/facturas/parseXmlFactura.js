@@ -48,11 +48,14 @@ function safeStr(value) {
 
 function safeDate(value) {
   const raw = nodeText(value);
-  if (!raw) return null;
+  if (raw == null) return null;
 
   try {
-    const date = new Date(raw);
-    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw.trim())
+      ? `${raw.trim()}T12:00:00.000Z`
+      : raw;
+    const d = new Date(normalized);
+    return isNaN(d.getTime()) ? null : d.toISOString();
   } catch {
     return null;
   }

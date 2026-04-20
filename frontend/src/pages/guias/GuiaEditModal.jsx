@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { fmtGuiaDate, isoToDateInput } from "@/lib/dateGuia";
 
 // Solo los dos estados operativos que se persisten en BD.
 const ESTADOS_OPCIONES = [
@@ -25,19 +26,8 @@ function getInitialModalSize() {
   return "normal";
 }
 
-function formatDate(value) {
-  if (!value) return "";
-  return new Date(value).toISOString().slice(0, 10);
-}
-
-function formatDisplayDate(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+const formatDate = isoToDateInput;
+const formatDisplayDate = fmtGuiaDate;
 
 function ReadOnlyRow({ label, value }) {
   return (

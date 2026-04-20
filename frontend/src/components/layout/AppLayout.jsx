@@ -6,11 +6,27 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem("sidebar-collapsed") === "true"; } catch { return false; }
+  });
   const { user } = useAuth();
+
+  function handleToggleCollapse() {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem("sidebar-collapsed", String(next)); } catch {}
+      return next;
+    });
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={handleToggleCollapse}
+      />
 
       {/* Overlay oscuro — solo mobile/tablet cuando sidebar está abierto */}
       {sidebarOpen && (

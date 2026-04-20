@@ -3,15 +3,15 @@ import { AlertCircle, Calendar, ChevronLeft, ChevronRight, Search } from "lucide
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { fmtGuiaDateCorta } from "@/lib/dateGuia";
+import ListSummary from "@/components/ui/ListSummary";
 import GuiaStatusBadge, { VinculoBadge } from "./GuiaStatusBadge";
 import GuiaDetailDrawer from "./GuiaDetailDrawer";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fechaCorta(iso) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  return d.toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "2-digit" });
+  return fmtGuiaDateCorta(iso);
 }
 
 // Tamaño del drawer persistido en sesión
@@ -234,9 +234,6 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400">
-              {total > 0 ? `${total} guía${total !== 1 ? "s" : ""}` : ""}
-            </span>
             <div className="flex items-center gap-1">
               <span className="text-xs text-slate-400">Por página:</span>
               {LIMIT_OPTIONS.map((opt) => (
@@ -454,9 +451,16 @@ export default function GuiaListTab({ refreshTrigger = 0 }) {
           {/* Paginación */}
           {!loading && total > 0 && (
             <div className="flex shrink-0 items-center justify-between border-t bg-white px-4 py-2 sm:px-6">
-              <span className="text-xs text-slate-500">
-                Pág. {page}/{totalPages} · {total} guía{total !== 1 ? "s" : ""}
-              </span>
+              <div className="flex items-center gap-2">
+                <ListSummary
+                  total={total}
+                  page={page}
+                  pageSize={limit}
+                  noun="guía"
+                />
+                <span className="text-xs text-slate-300">·</span>
+                <span className="text-xs text-slate-400">Pág. {page}/{totalPages}</span>
+              </div>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}

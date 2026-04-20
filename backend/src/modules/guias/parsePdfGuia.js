@@ -68,7 +68,8 @@ async function parsePdfGuia(pdfBuffer) {
     const parts = fechaRaw.split(/[\/\-]/);
     if (parts.length === 3) {
       const [d, m, y] = parts;
-      const dt = new Date(`${y}-${m}-${d}`);
+      // Anclar al mediodía UTC para evitar rollback en UTC-5 (Perú)
+      const dt = new Date(`${y}-${m}-${d}T12:00:00.000Z`);
       fechaEmision = isNaN(dt.getTime()) ? null : dt.toISOString();
     }
   }
@@ -86,7 +87,8 @@ async function parsePdfGuia(pdfBuffer) {
     const parts = fechaInicioRaw.split(/[\/\-]/);
     if (parts.length === 3) {
       const [d, m, y] = parts;
-      const dt = new Date(`${y}-${m}-${d}`);
+      // Anclar al mediodía UTC para evitar rollback en UTC-5 (Perú)
+      const dt = new Date(`${y}-${m}-${d}T12:00:00.000Z`);
       fechaInicioTraslado = isNaN(dt.getTime()) ? null : dt.toISOString();
     }
   }

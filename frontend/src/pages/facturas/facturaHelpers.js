@@ -1,4 +1,4 @@
-// Helpers reutilizables para el módulo de facturación
+import { formatDateShort, formatDateLong } from "@/lib/dateOnly";
 
 export function fmtTotal(val, moneda) {
   if (val == null) return "-";
@@ -7,13 +7,11 @@ export function fmtTotal(val, moneda) {
 }
 
 export function fechaCorta(iso) {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "2-digit" });
+  return formatDateShort(iso);
 }
 
 export function fechaLarga(iso) {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" });
+  return formatDateLong(iso);
 }
 
 // Vencida: fechaVencimiento pasada y estadoPago no es PAGADA ni ANULADA

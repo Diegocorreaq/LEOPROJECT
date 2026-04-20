@@ -10,7 +10,7 @@ const {
 } = require("./common.schema");
 
 const TIPOS_CONTRATO = ["PROPIO", "SUBCONTRATADO"];
-const TIPOS_UNIDAD = ["CAMION", "TRACTO", "FURGON", "PLATAFORMA", "VOLQUETE", "CISTERNA", "OTRO"];
+const TIPOS_UNIDAD = ["CAMION", "TRACTO", "FURGON", "PLATAFORMA", "VOLQUETE", "CISTERNA", "OTRO", "CAMIONETA", "AUTO", "FURGON 2TN", "FURGON 10TN", "BARANDA REBATIBLE 2TN", "BARANDA REBATIBLE 10TN", "CAMABAJA"];
 const TIPOS_DOCUMENTO = ["DNI", "RUC", "CE", "PASAPORTE"];
 const UBIGEO_REGEX = /^\d{6}$/;
 
@@ -52,7 +52,18 @@ const conductorSubSchema = z.object({
   tipoDocumento: z.enum(TIPOS_DOCUMENTO).optional().default("DNI"),
   nroDocumento: z.string().trim().min(8).max(20),
   licencia: z.string().trim().max(20).optional().nullable(),
-}).strict();
+}).strict().superRefine((data, ctx) => {
+  if (data.nroDocumento.length === 8 && !/^\d{8}$/.test(data.nroDocumento)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Un documento de 8 caracteres debe contener solo dígitos (DNI).",
+      path: ["nroDocumento"],
+    });
+  }
+}).transform((data) => ({
+  ...data,
+  tipoDocumento: /^\d{8}$/.test(data.nroDocumento) ? "DNI" : data.tipoDocumento,
+}));
 
 const subcontratadoSchema = z.object({
   empresa: empresaSubSchema,

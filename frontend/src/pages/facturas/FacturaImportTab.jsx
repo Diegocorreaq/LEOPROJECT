@@ -6,6 +6,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { formatDateLong } from "@/lib/dateOnly";
 import ServicioFacturaPicker from "./ServicioFacturaPicker";
 import FacturaStatusBadge from "./FacturaStatusBadge";
 
@@ -231,7 +232,7 @@ export default function FacturaImportTab({ onImported }) {
             <p className="text-xs text-slate-400 mb-1">Factura importada</p>
             <p className="text-2xl font-bold tracking-wide">{factura?.serie}-{factura?.numero}</p>
             <p className="text-sm text-slate-400 mt-0.5">
-              {factura?.fechaEmision ? new Date(factura.fechaEmision).toLocaleDateString("es-PE") : "—"}
+              {factura?.fechaEmision ? formatDateLong(factura.fechaEmision) : "—"}
             </p>
           </div>
 
@@ -257,7 +258,7 @@ export default function FacturaImportTab({ onImported }) {
               <Row label="Forma de pago" value={factura?.formaPago} />
               <Row
                 label="Fecha vencimiento"
-                value={factura?.fechaVencimiento ? new Date(factura.fechaVencimiento).toLocaleDateString("es-PE") : null}
+                value={factura?.fechaVencimiento ? formatDateLong(factura.fechaVencimiento) : null}
               />
             </Section>
           )}

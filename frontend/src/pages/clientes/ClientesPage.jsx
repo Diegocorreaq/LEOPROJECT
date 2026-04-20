@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import ConfirmModal from "@/components/ui/confirm-modal";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import ListSummary from "@/components/ui/ListSummary";
 
 export default function ClientesPage() {
   const { user } = useAuth();
@@ -114,6 +115,11 @@ export default function ClientesPage() {
             Limpiar
           </button>
         )}
+        <ListSummary
+          total={clientes.length}
+          noun="cliente"
+          className="ml-auto"
+        />
       </div>
 
       {feedback && (

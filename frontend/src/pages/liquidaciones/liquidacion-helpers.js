@@ -1,3 +1,4 @@
+import { formatDateOnly } from "@/lib/dateOnly";
 import { computeLiquidacion, LIQUIDACION_STATUS } from "./computeLiquidacion";
 
 export { computeLiquidacion, LIQUIDACION_STATUS };
@@ -27,12 +28,7 @@ export function formatCurrency(value) {
 
 export function formatDate(value, options = {}) {
   if (!value) return "-";
-  return new Date(value).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    ...options,
-  });
+  return formatDateOnly(value, { day: "2-digit", month: "short", year: "numeric", ...options });
 }
 
 export function getConductorNombre(conductor) {

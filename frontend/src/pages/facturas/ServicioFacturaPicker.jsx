@@ -2,11 +2,7 @@ import { useEffect, useState } from "react";
 import { Search, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-
-function fechaCorta(iso) {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "2-digit" });
-}
+import { formatDateShort } from "@/lib/dateOnly";
 
 export default function ServicioFacturaPicker({ facturaId, onSelect, selectedId }) {
   const [sugerencias, setSugerencias] = useState([]);
@@ -120,7 +116,7 @@ export default function ServicioFacturaPicker({ facturaId, onSelect, selectedId 
                         {s.origen} → {s.destino}
                       </p>
                       <p className={cn("text-xs mt-0.5", isSelected ? "text-slate-300" : "text-slate-500")}>
-                        {fechaCorta(s.fechaServicio)}
+                        {formatDateShort(s.fechaServicio)}
                         {s.vehiculo && ` · ${s.vehiculo.placa}`}
                         {s.conductor && ` · ${s.conductor.nombre}`}
                       </p>

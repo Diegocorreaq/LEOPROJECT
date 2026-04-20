@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import ListSummary from "@/components/ui/ListSummary";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import FacturaStatusBadge from "./FacturaStatusBadge";
@@ -260,9 +261,12 @@ export default function FacturaListTab({ facturas, loading, onFacturaUpdated, on
             {item.label}
           </button>
         ))}
-        <span className="ml-auto text-[11px] text-slate-400">
-          {filtered.length} {filtered.length === 1 ? "resultado" : "resultados"}
-        </span>
+        <ListSummary
+          total={filtered.length}
+          grandTotal={facturas.length}
+          noun="factura"
+          className="ml-auto"
+        />
       </div>
 
       {/* Tabla + drawer */}
