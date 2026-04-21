@@ -23,6 +23,7 @@ const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
 const { recordAuditEvent } = require("../lib/audit");
+const { computeFacturaPaymentSnapshot } = require("../lib/facturaPaymentStatus");
 const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination");
 const { validate, validateRequest } = require("../lib/validate");
 const { ESTADOS_PAGO, patchFacturaSchema, vincularFacturaSchema } = require("../validators/facturas.schema");
@@ -95,6 +96,34 @@ const facturaInclude = {
   guias: true,
   pagos: true,
 };
+
+function toNum(value) {
+  if (value == null) return 0;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function round2(value) {
+  return Math.round(toNum(value) * 100) / 100;
+}
+
+function enrichFacturaWithPaymentStatus(factura, { keepPagos = true } = {}) {
+  if (!factura) return factura;
+
+  const pagos = Array.isArray(factura.pagos) ? factura.pagos : [];
+  const payment = computeFacturaPaymentSnapshot(factura.total, pagos, factura.estadoPago);
+  const payload = keepPagos ? { ...factura } : (() => {
+    const { pagos: _pagos, ...withoutPagos } = factura;
+    return withoutPagos;
+  })();
+
+  return {
+    ...payload,
+    estadoPago: payment.status,
+    montoPagado: round2(payment.montoPagado),
+    saldoPendiente: round2(payment.saldo),
+  };
+}
 
 // ── Helper: resolver/crear cliente por RUC ────────────────────────────────────
 async function resolveOrCreateCliente(tx, { clienteRuc, clienteNombre }) {
@@ -318,6 +347,7 @@ router.get("/", async (req, res, next) => {
               },
             },
           },
+          pagos: { select: { monto: true } },
           guias: { select: { serieGuia: true, numeroGuia: true } },
         },
         orderBy: [{ fechaEmision: "desc" }, { createdAt: "desc" }],
@@ -326,11 +356,14 @@ router.get("/", async (req, res, next) => {
       }),
     ]);
 
-    const result = facturas.map((f) => ({
-      ...f,
-      numeroCompleto: `${f.serie}-${f.numero}`,
-      cantidadGuias: f.guias.length,
-    }));
+    const result = facturas.map((f) => {
+      const factura = enrichFacturaWithPaymentStatus(f, { keepPagos: false });
+      return {
+        ...factura,
+        numeroCompleto: `${factura.serie}-${factura.numero}`,
+        cantidadGuias: factura.guias.length,
+      };
+    });
 
     applyPaginationHeaders(res, { ...pagination, total });
     res.json(result);
@@ -409,7 +442,8 @@ router.get("/:id", async (req, res, next) => {
     });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
 
-    res.json({ ...factura, numeroCompleto: `${factura.serie}-${factura.numero}` });
+    const facturaWithStatus = enrichFacturaWithPaymentStatus(factura);
+    res.json({ ...facturaWithStatus, numeroCompleto: `${factura.serie}-${factura.numero}` });
   } catch (err) {
     next(err);
   }
@@ -779,7 +813,12 @@ router.patch("/:id", async (req, res, next) => {
       metadata: { campos: Object.keys(body) },
     });
 
-    res.json({ ...updated, numeroCompleto: `${updated.serie}-${updated.numero}`, message: "Cambios guardados correctamente" });
+    const updatedWithStatus = enrichFacturaWithPaymentStatus(updated);
+    res.json({
+      ...updatedWithStatus,
+      numeroCompleto: `${updated.serie}-${updated.numero}`,
+      message: "Cambios guardados correctamente",
+    });
   } catch (err) {
     next(err);
   }
@@ -834,8 +873,9 @@ router.patch("/:id/vincular", async (req, res, next) => {
       metadata: { servicioId: body.servicioId, ordenServicioId: orden.id },
     });
 
+    const updatedWithStatus = enrichFacturaWithPaymentStatus(updated);
     res.json({
-      ...updated,
+      ...updatedWithStatus,
       numeroCompleto: `${updated.serie}-${updated.numero}`,
       message: "Factura vinculada correctamente al servicio",
     });
@@ -852,12 +892,14 @@ router.patch("/:id/desvincular", async (req, res, next) => {
 
     const factura = await prisma.factura.findUnique({
       where: { id: validated.params.id },
+      include: { pagos: true },
     });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
 
     if (!factura.ordenServicioId) {
+      const facturaWithStatus = enrichFacturaWithPaymentStatus(factura);
       return res.json({
-        ...factura,
+        ...facturaWithStatus,
         numeroCompleto: `${factura.serie}-${factura.numero}`,
         message: "La factura ya no tiene servicio vinculado.",
       });
@@ -882,8 +924,9 @@ router.patch("/:id/desvincular", async (req, res, next) => {
       metadata: { ordenAnteriorId: factura.ordenServicioId },
     });
 
+    const updatedWithStatus = enrichFacturaWithPaymentStatus(updated);
     res.json({
-      ...updated,
+      ...updatedWithStatus,
       numeroCompleto: `${updated.serie}-${updated.numero}`,
       message: "Factura desvinculada correctamente",
     });

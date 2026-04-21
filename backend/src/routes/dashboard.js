@@ -14,6 +14,7 @@ const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireOperaciones } = require("../middleware/rbac");
 const { serializeServiciosEstado } = require("../lib/servicioEstado");
+const { computeFacturaPaymentSnapshot } = require("../lib/facturaPaymentStatus");
 const { validate } = require("../lib/validate");
 const { isoDateQueryField } = require("../validators/common.schema");
 
@@ -81,7 +82,7 @@ function resolveGeneralRange(rango, desde, hasta) {
   return { desde: desdeDate, hasta: hastaDate };
 }
 
-const ESTADOS_CERRADA = ["PAGADA", "ANULADA"];
+const ESTADO_ANULADA = "ANULADA";
 
 // ─── GET /api/dashboard/general ─────────────────────────────────────────────
 
@@ -113,8 +114,7 @@ router.get("/general", async (req, res, next) => {
       serviciosSemana,
       guiasSinVincular,
       facturasSinVincular,
-      facturasPendientesPago,
-      facturasVencidasCount,
+      facturasKpisData,
       liquidacionesPendientes,
     ] = await Promise.all([
       prisma.servicio.count({
@@ -129,19 +129,33 @@ router.get("/general", async (req, res, next) => {
       prisma.factura.count({
         where: { ordenServicioId: null },
       }),
-      prisma.factura.count({
-        where: { estadoPago: "PENDIENTE" },
-      }),
-      prisma.factura.count({
-        where: {
-          fechaVencimiento: { lt: hoyStart },
-          estadoPago: { notIn: ESTADOS_CERRADA },
+      prisma.factura.findMany({
+        select: {
+          fechaVencimiento: true,
+          total: true,
+          estadoPago: true,
+          pagos: { select: { monto: true } },
         },
       }),
       prisma.liquidacion.count({
         where: { status: "PENDIENTE" },
       }),
     ]);
+
+    let facturasPendientesPago = 0;
+    let facturasVencidasCount = 0;
+    for (const factura of facturasKpisData) {
+      const payment = computeFacturaPaymentSnapshot(factura.total, factura.pagos, factura.estadoPago);
+      if (payment.isClosed) continue;
+
+      if (payment.status === "PENDIENTE") facturasPendientesPago++;
+
+      const esVencida =
+        factura.fechaVencimiento != null &&
+        new Date(factura.fechaVencimiento) < hoyStart &&
+        payment.saldo > 0;
+      if (esVencida) facturasVencidasCount++;
+    }
 
     // ── Flujo documental en el rango seleccionado (7 queries en paralelo) ──
     const whereRango = { fechaServicio: { gte: desde, lte: hasta } };
@@ -154,7 +168,7 @@ router.get("/general", async (req, res, next) => {
       facturasConPago,
       serviciosConGuiaSinFactura,
       facturasSinServicioRango,
-      facturasSinPagoRango,
+      facturasFlujoData,
     ] = await Promise.all([
       prisma.servicio.count({ where: whereRango }),
       prisma.servicio.count({ where: { ...whereRango, guias: { some: {} } } }),
@@ -174,20 +188,28 @@ router.get("/general", async (req, res, next) => {
       prisma.factura.count({
         where: { ...whereFacturasRango, ordenServicioId: null },
       }),
-      prisma.factura.count({
-        where: {
-          ...whereFacturasRango,
-          estadoPago: { notIn: ESTADOS_CERRADA },
-          pagos: { none: {} },
+      prisma.factura.findMany({
+        where: whereFacturasRango,
+        select: {
+          total: true,
+          estadoPago: true,
+          pagos: { select: { monto: true } },
         },
       }),
     ]);
 
+    const facturasSinPagoRango = facturasFlujoData.reduce((count, factura) => {
+      const payment = computeFacturaPaymentSnapshot(factura.total, factura.pagos, factura.estadoPago);
+      if (payment.isClosed) return count;
+      if (payment.montoPagado <= 0) return count + 1;
+      return count;
+    }, 0);
+
     // ── Alertas (4 queries en paralelo) ────────────────────────────────────
     const [
       guiasSinVincularRecientes,
-      facturasObservadasRecientes,
-      facturasVencidasAlerta,
+      facturasObservadasRecientesRaw,
+      facturasVencidasAlertaRaw,
       serviciosSinDocumentos,
     ] = await Promise.all([
       prisma.guiaRemision.findMany({
@@ -208,11 +230,11 @@ router.get("/general", async (req, res, next) => {
         where: {
           OR: [
             { estadoPago: "OBSERVADA" },
-            { ordenServicioId: null, estadoPago: { notIn: ESTADOS_CERRADA } },
+            { ordenServicioId: null, estadoPago: { not: ESTADO_ANULADA } },
           ],
         },
         orderBy: { createdAt: "desc" },
-        take: 10,
+        take: 30,
         select: {
           id: true,
           serie: true,
@@ -222,24 +244,27 @@ router.get("/general", async (req, res, next) => {
           estadoPago: true,
           moneda: true,
           ordenServicioId: true,
+          pagos: { select: { monto: true } },
           cliente: { select: { razonSocial: true } },
         },
       }),
       prisma.factura.findMany({
         where: {
           fechaVencimiento: { lt: hoyStart },
-          estadoPago: { notIn: ESTADOS_CERRADA },
+          estadoPago: { not: ESTADO_ANULADA },
         },
         orderBy: { fechaVencimiento: "asc" },
-        take: 10,
+        take: 50,
         select: {
           id: true,
           serie: true,
           numero: true,
+          fechaEmision: true,
           fechaVencimiento: true,
           total: true,
           estadoPago: true,
           moneda: true,
+          pagos: { select: { monto: true } },
           cliente: { select: { razonSocial: true } },
         },
       }),
@@ -284,6 +309,7 @@ router.get("/general", async (req, res, next) => {
           total: true,
           estadoPago: true,
           moneda: true,
+          pagos: { select: { monto: true } },
           cliente: { select: { razonSocial: true } },
         },
       }),
@@ -306,6 +332,67 @@ router.get("/general", async (req, res, next) => {
         },
       }),
     ]);
+
+    const facturasObservadasRecientes = facturasObservadasRecientesRaw
+      .filter((f) => {
+        const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+        return f.estadoPago === "OBSERVADA" || (f.ordenServicioId == null && !payment.isClosed);
+      })
+      .slice(0, 10)
+      .map((f) => {
+        const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+        return {
+          id: f.id,
+          serie: f.serie,
+          numero: f.numero,
+          fechaEmision: f.fechaEmision,
+          total: toNum(f.total),
+          estadoPago: f.estadoPago === "OBSERVADA" ? "OBSERVADA" : payment.status,
+          moneda: f.moneda,
+          ordenServicioId: f.ordenServicioId,
+          cliente: f.cliente,
+        };
+      });
+
+    const facturasVencidasAlerta = facturasVencidasAlertaRaw
+      .filter((f) => {
+        const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+        return !payment.isClosed && payment.saldo > 0;
+      })
+      .slice(0, 10)
+      .map((f) => {
+        const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+        return {
+          id: f.id,
+          serie: f.serie,
+          numero: f.numero,
+          fechaEmision: f.fechaEmision,
+          fechaVencimiento: f.fechaVencimiento,
+          total: toNum(f.total),
+          estadoPago: payment.status,
+          moneda: f.moneda,
+          cliente: f.cliente,
+          diasAtraso: Math.floor(
+            (ahora.getTime() - new Date(f.fechaVencimiento).getTime()) / 86400000,
+          ),
+        };
+      });
+
+    const ultimasFacturasSerialized = ultimasFacturas.map((f) => {
+      const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+      return {
+        id: f.id,
+        serie: f.serie,
+        numero: f.numero,
+        fechaEmision: f.fechaEmision,
+        total: toNum(f.total),
+        estadoPago: payment.status,
+        moneda: f.moneda,
+        cliente: f.cliente,
+        montoPagado: round2(payment.montoPagado),
+        saldoPendiente: round2(payment.saldo),
+      };
+    });
 
     req.log.info("Dashboard general consultado", {
       usuarioId: req.user.id,
@@ -333,22 +420,13 @@ router.get("/general", async (req, res, next) => {
       },
       alertas: {
         guiasSinVincularRecientes,
-        facturasObservadasRecientes: facturasObservadasRecientes.map((f) => ({
-          ...f,
-          total: toNum(f.total),
-        })),
-        facturasVencidas: facturasVencidasAlerta.map((f) => ({
-          ...f,
-          total: toNum(f.total),
-          diasAtraso: Math.floor(
-            (ahora.getTime() - new Date(f.fechaVencimiento).getTime()) / 86400000,
-          ),
-        })),
+        facturasObservadasRecientes,
+        facturasVencidas: facturasVencidasAlerta,
         serviciosSinDocumentos: serializeServiciosEstado(serviciosSinDocumentos),
       },
       actividadReciente: {
         ultimasGuias,
-        ultimasFacturas: ultimasFacturas.map((f) => ({ ...f, total: toNum(f.total) })),
+        ultimasFacturas: ultimasFacturasSerialized,
         ultimosPagos: ultimosPagos.map((p) => ({ ...p, monto: toNum(p.monto) })),
       },
       meta: {
@@ -382,7 +460,7 @@ router.get("/cobranza", async (req, res, next) => {
     const seisMesesAtras = new Date(ahora.getFullYear(), ahora.getMonth() - 5, 1);
 
     // ── KPIs del mes: facturado y cobrado (2 aggregations en paralelo) ──────
-    const [facturadoMesAgg, cobradoMesAgg, facturasPagadasCount] = await Promise.all([
+    const [facturadoMesAgg, cobradoMesAgg, facturasCobranzaData] = await Promise.all([
       prisma.factura.aggregate({
         where: { fechaEmision: { gte: mesStart, lte: mesEnd } },
         _sum: { total: true },
@@ -391,33 +469,32 @@ router.get("/cobranza", async (req, res, next) => {
         where: { fechaPago: { gte: mesStart, lte: mesEnd } },
         _sum: { monto: true },
       }),
-      prisma.factura.count({
-        where: { estadoPago: "PAGADA" },
+      prisma.factura.findMany({
+        where: { estadoPago: { not: ESTADO_ANULADA } },
+        select: {
+          id: true,
+          serie: true,
+          numero: true,
+          clienteId: true,
+          fechaEmision: true,
+          fechaVencimiento: true,
+          total: true,
+          estadoPago: true,
+          moneda: true,
+          cliente: { select: { razonSocial: true, ruc: true } },
+          pagos: { select: { monto: true } },
+        },
       }),
     ]);
 
-    // ── Fetch facturas no cerradas con pagos (para pendiente, aging, top clientes) ──
-    const facturasPendientesData = await prisma.factura.findMany({
-      where: { estadoPago: { notIn: ESTADOS_CERRADA } },
-      select: {
-        id: true,
-        serie: true,
-        numero: true,
-        clienteId: true,
-        fechaEmision: true,
-        fechaVencimiento: true,
-        total: true,
-        estadoPago: true,
-        moneda: true,
-        cliente: { select: { razonSocial: true, ruc: true } },
-        pagos: { select: { monto: true } },
-      },
-    });
+    // ── Dataset de facturas operativas (ANULADA fuera; cierres por saldo en cálculo) ──
+    const facturasPendientesData = facturasCobranzaData;
 
     // ── Computo en JS: saldo, aging, top clientes, facturas críticas ────────
     let pendientePorCobrar = 0;
     let facturasPendientesCount = 0;
     let facturasParcialesCount = 0;
+    let facturasPagadasCount = 0;
     let facturasVencidasCount = 0;
 
     const agingBuckets = {
@@ -432,11 +509,13 @@ router.get("/cobranza", async (req, res, next) => {
     const facturasCriticasList = [];
 
     for (const f of facturasPendientesData) {
-      const montoPagado = f.pagos.reduce((sum, p) => sum + toNum(p.monto), 0);
-      const saldo = Math.max(0, toNum(f.total) - montoPagado);
+      const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+      const montoPagado = payment.montoPagado;
+      const saldo = payment.saldo;
 
-      if (f.estadoPago === "PENDIENTE") facturasPendientesCount++;
-      if (f.estadoPago === "PARCIAL") facturasParcialesCount++;
+      if (payment.status === "PAGADA") facturasPagadasCount++;
+      else if (payment.status === "PENDIENTE") facturasPendientesCount++;
+      else if (payment.status === "PARCIAL") facturasParcialesCount++;
 
       const esVencida =
         f.fechaVencimiento != null &&
@@ -490,7 +569,7 @@ router.get("/cobranza", async (req, res, next) => {
           total: toNum(f.total),
           montoPagado: round2(montoPagado),
           saldoPendiente: round2(saldo),
-          estadoPago: f.estadoPago,
+          estadoPago: payment.status,
           moneda: f.moneda,
           diasAtraso,
         });

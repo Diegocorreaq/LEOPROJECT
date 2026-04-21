@@ -207,7 +207,7 @@ export default function DashboardCobranzaTab({ refreshKey }) {
     <div className="space-y-6 p-6">
       {/* ── KPIs ── */}
       <section>
-        <SectionTitle>KPIs de cobranza — mes actual</SectionTitle>
+        <SectionTitle>KPIs de cobranza</SectionTitle>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
           <KpiCard
             label="Facturado mes"
@@ -215,6 +215,7 @@ export default function DashboardCobranzaTab({ refreshKey }) {
             icon={TrendingUp}
             color="blue"
             currency
+            sublabel="Mes actual"
           />
           <KpiCard
             label="Cobrado mes"
@@ -222,6 +223,7 @@ export default function DashboardCobranzaTab({ refreshKey }) {
             icon={CheckCircle2}
             color="green"
             currency
+            sublabel="Mes actual"
           />
           <KpiCard
             label="Pendiente cobrar"
@@ -229,19 +231,21 @@ export default function DashboardCobranzaTab({ refreshKey }) {
             icon={DollarSign}
             color="amber"
             currency
-            sublabel="Saldo total activo"
+            sublabel="Cartera activa"
           />
           <KpiCard
             label="Fact. pendientes"
             value={kpis.facturasPendientes}
             icon={Clock}
             color="amber"
+            sublabel="Total histórico"
           />
           <KpiCard
             label="Fact. parciales"
             value={kpis.facturasParciales}
             icon={Clock}
             color="blue"
+            sublabel="Total histórico"
           />
           <KpiCard
             label="Fact. pagadas"
@@ -255,6 +259,7 @@ export default function DashboardCobranzaTab({ refreshKey }) {
             value={kpis.facturasVencidas}
             icon={AlertTriangle}
             color="red"
+            sublabel="Cartera activa"
           />
         </div>
       </section>
