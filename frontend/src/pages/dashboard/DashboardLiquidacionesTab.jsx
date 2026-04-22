@@ -8,10 +8,10 @@ import {
   Wallet,
 } from "lucide-react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -84,20 +84,48 @@ function EmptyBlock({ message }) {
   );
 }
 
-const TrendTooltip = ({ active, payload, label }) => {
+const ConductorSaldoTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-lg">
-      <p className="mb-1 font-semibold text-slate-700">{label}</p>
-      {payload.map((entry) => (
-        <p key={entry.name} style={{ color: entry.color }}>
-          {entry.name}: {formatCurrency(entry.value)}
+      <p className="mb-1 font-semibold text-slate-700">{row.conductorNombre}</p>
+      <div className="space-y-0.5 text-slate-600">
+        <p>
+          Debe a la empresa: <span className="font-semibold text-blue-700">{formatCurrency(row.totalFavorEmpresaPendiente)}</span>
         </p>
-      ))}
+        <p>
+          La empresa le debe: <span className="font-semibold text-rose-700">{formatCurrency(row.totalFavorConductorPendiente)}</span>
+        </p>
+        <p>
+          Saldo neto consolidado:{" "}
+          <span
+            className={cn(
+              "font-semibold",
+              Number(row.deudaNetaPendiente ?? 0) > 0
+                ? "text-blue-700"
+                : Number(row.deudaNetaPendiente ?? 0) < 0
+                  ? "text-rose-700"
+                  : "text-green-700",
+            )}
+          >
+            {formatCurrency(row.deudaNetaPendiente)}
+          </span>
+        </p>
+        <p>Liquidaciones: {formatCount(row.cantidadLiquidaciones)}</p>
+        <p>Con saldo abierto: {formatCount(row.liquidacionesConPendienteReal)}</p>
+      </div>
     </div>
   );
 };
+
+function truncateLabel(value, max = 28) {
+  const text = String(value ?? "");
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 3)}...`;
+}
 
 function formatConductorNombre(conductor) {
   if (!conductor) return "Sin conductor";
@@ -109,6 +137,8 @@ export default function DashboardLiquidacionesTab({ refreshKey }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [conductores, setConductores] = useState([]);
+  const [conductorSearch, setConductorSearch] = useState("");
+  const [showConductorOptions, setShowConductorOptions] = useState(false);
   const [conductorId, setConductorId] = useState("");
   const [topOrder, setTopOrder] = useState("DEBEN_MAS_A_EMPRESA");
   const [loadingConductores, setLoadingConductores] = useState(true);
@@ -180,20 +210,59 @@ export default function DashboardLiquidacionesTab({ refreshKey }) {
 
   const kpis = data.kpis ?? {};
   const porResultadoEconomico = (data.porResultadoEconomico ?? []).filter((item) => item.resultado !== "CUADRADA");
-  const serie = data.serie ?? [];
   const topConductores = data.topConductores ?? [];
   const selectedConductorSummary = data.selectedConductorSummary ?? null;
   const pendientes = data.alertas?.pendientes ?? [];
   const isConductorFiltered = Boolean(conductorId);
+  const conductorSearchQuery = conductorSearch.trim().toLowerCase();
+  const conductoresFiltrados = conductorSearchQuery
+    ? conductores.filter((conductor) => {
+      const nombre = formatConductorNombre(conductor).toLowerCase();
+      const documento = String(conductor.nroDocumento ?? "").toLowerCase();
+      return nombre.includes(conductorSearchQuery) || documento.includes(conductorSearchQuery);
+    })
+    : conductores;
+  const conductoresSugeridos = conductoresFiltrados;
+
+  function selectConductor(option) {
+    if (!option) {
+      setConductorId("");
+      setConductorSearch("");
+      setShowConductorOptions(false);
+      return;
+    }
+
+    setConductorId(option.id);
+    setConductorSearch(formatConductorNombre(option));
+    setShowConductorOptions(false);
+  }
 
   const totalResultados = porResultadoEconomico.reduce((sum, item) => sum + Number(item.cantidad ?? 0), 0);
-
-  const chartData = serie.map((item) => ({
-    label: item.label,
-    montoEntregado: Number(item.montoEntregado ?? 0),
-    totalGastos: Number(item.totalGastos ?? 0),
-    saldoNeto: Number(item.saldoPendienteNeto ?? item.saldoNeto ?? 0),
-  }));
+  const conductorChartSource = isConductorFiltered
+    ? (selectedConductorSummary ? [selectedConductorSummary] : [])
+    : topConductores;
+  const conductorChartData = conductorChartSource.map((item) => {
+    const debeEmpresa = Number(item.totalFavorEmpresaPendiente ?? 0);
+    const empresaDebe = -Number(item.totalFavorConductorPendiente ?? 0);
+    return {
+      conductorId: item.conductorId,
+      conductorNombre: item.conductorNombre ?? "Sin conductor",
+      cantidadLiquidaciones: Number(item.cantidadLiquidaciones ?? 0),
+      liquidacionesConPendienteReal: Number(item.liquidacionesConPendienteReal ?? 0),
+      totalFavorEmpresaPendiente: debeEmpresa,
+      totalFavorConductorPendiente: Math.abs(empresaDebe),
+      deudaNetaPendiente: Number(item.deudaNetaPendiente ?? 0),
+      debeEmpresa,
+      empresaDebe,
+      saldoPendienteTotal: debeEmpresa + empresaDebe,
+    };
+  });
+  const maxConcentracionSaldo = conductorChartData.reduce((max, item) => {
+    const itemMax = Math.max(Math.abs(item.debeEmpresa), Math.abs(item.empresaDebe));
+    return Math.max(max, itemMax);
+  }, 0);
+  const chartDomainMax = maxConcentracionSaldo > 0 ? Math.ceil(maxConcentracionSaldo * 1.1) : 1;
+  const conductorChartHeight = Math.max(220, Math.min(520, conductorChartData.length * 46 + 72));
 
   return (
     <div className="space-y-6 p-6">
@@ -202,19 +271,62 @@ export default function DashboardLiquidacionesTab({ refreshKey }) {
         <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conductor</span>
-            <select
-              value={conductorId}
-              onChange={(event) => setConductorId(event.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
-              disabled={loadingConductores}
-            >
-              <option value="">Todos</option>
-              {conductores.map((conductor) => (
-                <option key={conductor.id} value={conductor.id}>
-                  {formatConductorNombre(conductor)}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <input
+                type="text"
+                value={conductorSearch}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setConductorSearch(value);
+                  setShowConductorOptions(true);
+
+                  if (conductorId) {
+                    const selected = conductores.find((item) => item.id === conductorId);
+                    const selectedName = formatConductorNombre(selected).toLowerCase();
+                    if (selectedName !== value.trim().toLowerCase()) {
+                      setConductorId("");
+                    }
+                  }
+                }}
+                onFocus={() => setShowConductorOptions(true)}
+                onBlur={() => setTimeout(() => setShowConductorOptions(false), 120)}
+                placeholder="Escribe para filtrar conductores..."
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                disabled={loadingConductores}
+              />
+
+              {showConductorOptions && !loadingConductores ? (
+                <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                  <button
+                    type="button"
+                    className="w-full border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectConductor(null)}
+                  >
+                    Todos
+                  </button>
+
+                  {conductoresSugeridos.map((conductor) => (
+                    <button
+                      key={conductor.id}
+                      type="button"
+                      className="w-full border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-700 last:border-b-0 hover:bg-slate-50"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => selectConductor(conductor)}
+                    >
+                      <p className="font-medium">{formatConductorNombre(conductor)}</p>
+                      {conductor.nroDocumento ? (
+                        <p className="text-xs text-slate-500">{conductor.nroDocumento}</p>
+                      ) : null}
+                    </button>
+                  ))}
+
+                  {conductoresSugeridos.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-slate-400">Sin coincidencias</div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </label>
 
           <label className="space-y-1">
@@ -243,82 +355,106 @@ export default function DashboardLiquidacionesTab({ refreshKey }) {
             </Link>
           }
         >
-          KPIs por resultado economico
+          KPIs y resultado economico
         </SectionTitle>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
-          <KpiCard label="Sin rendicion" value={kpis.sinRendicion} icon={AlertTriangle} color="amber" />
-          <KpiCard label="Saldo neto pendiente" value={kpis.saldoNeto} icon={Wallet} color="slate" money />
-          <KpiCard
-            label="Deben a la empresa"
-            value={kpis.favorEmpresa}
-            icon={Building2}
-            color="blue"
-            sublabel={formatCurrency(kpis.totalFavorEmpresaPendiente ?? kpis.montoFavorEmpresa)}
-          />
-          <KpiCard
-            label="La empresa les debe"
-            value={kpis.favorConductor}
-            icon={User}
-            color="violet"
-            sublabel={formatCurrency(kpis.totalFavorConductorPendiente ?? kpis.montoFavorConductor)}
-          />
-        </div>
-      </section>
-
-      <section>
-        <SectionTitle>Resultado economico</SectionTitle>
-        <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          {(porResultadoEconomico.length === 0 || totalResultados === 0) && (
-            <p className="py-6 text-center text-sm text-slate-400">Sin datos en el periodo</p>
-          )}
-          {porResultadoEconomico.map((item) => {
-            const qty = Number(item.cantidad ?? 0);
-            const pct = totalResultados > 0 ? Math.round((qty / totalResultados) * 100) : 0;
-            return (
-              <div key={item.resultado} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-700">{item.resultado}</span>
-                  <span className="font-bold text-slate-700">
-                    {formatCount(qty)} ({pct}%)
-                  </span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-white/60">
-                  <div className="h-1.5 rounded-full bg-slate-500" style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section>
-        <SectionTitle>Tendencia del saldo pendiente</SectionTitle>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          {kpis.totalLiquidaciones > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={chartData} margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+            <div className="lg:col-span-7">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <KpiCard label="Sin rendicion" value={kpis.sinRendicion} icon={AlertTriangle} color="amber" />
+                <KpiCard label="Saldo neto pendiente" value={kpis.saldoNeto} icon={Wallet} color="slate" money />
+                <KpiCard
+                  label="Deben a la empresa"
+                  value={kpis.favorEmpresa}
+                  icon={Building2}
+                  color="blue"
+                  sublabel={formatCurrency(kpis.totalFavorEmpresaPendiente ?? kpis.montoFavorEmpresa)}
+                />
+                <KpiCard
+                  label="La empresa les debe"
+                  value={kpis.favorConductor}
+                  icon={User}
+                  color="violet"
+                  sublabel={formatCurrency(kpis.totalFavorConductorPendiente ?? kpis.montoFavorConductor)}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 lg:col-span-5">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Resultado economico</p>
+              {(porResultadoEconomico.length === 0 || totalResultados === 0) && (
+                <p className="py-6 text-center text-sm text-slate-400">Sin datos en el periodo</p>
+              )}
+              <div className="space-y-2">
+                {porResultadoEconomico.map((item) => {
+                  const qty = Number(item.cantidad ?? 0);
+                  const pct = totalResultados > 0 ? Math.round((qty / totalResultados) * 100) : 0;
+                  return (
+                    <div key={item.resultado} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <div className="mb-1 flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-700">{item.resultado}</span>
+                        <span className="font-bold text-slate-700">
+                          {formatCount(qty)} ({pct}%)
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-200">
+                        <div className="h-1.5 rounded-full bg-slate-500" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle>Concentracion del saldo pendiente por conductor</SectionTitle>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="mb-3 text-xs text-slate-500">
+            Derecha: el conductor debe a la empresa. Izquierda: la empresa le debe al conductor.
+          </p>
+          {conductorChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={conductorChartHeight}>
+              <BarChart
+                data={conductorChartData}
+                layout="vertical"
+                margin={{ top: 8, right: 20, left: 12, bottom: 8 }}
+                barCategoryGap={10}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
                 <XAxis
-                  dataKey="label"
+                  type="number"
+                  domain={[-chartDomainMax, chartDomainMax]}
                   tick={{ fontSize: 11, fill: "#64748b" }}
                   axisLine={false}
                   tickLine={false}
+                  tickFormatter={(value) => formatCompactMoney(Math.abs(Number(value ?? 0)))}
                 />
                 <YAxis
-                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  type="category"
+                  dataKey="conductorNombre"
+                  width={220}
+                  tick={{ fontSize: 11, fill: "#334155" }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={formatCompactMoney}
+                  tickFormatter={(value) => truncateLabel(value, 30)}
                 />
-                <Tooltip content={<TrendTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                <Line type="monotone" dataKey="montoEntregado" name="Entregado" stroke="#2563eb" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="totalGastos" name="Gastos" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="saldoNeto" name="Saldo pendiente neto" stroke="#0f172a" strokeWidth={2} dot={false} />
-              </LineChart>
+                <ReferenceLine x={0} stroke="#64748b" strokeDasharray="4 4" />
+                <Tooltip content={<ConductorSaldoTooltip />} cursor={{ fill: "#f8fafc" }} />
+                <Bar dataKey="empresaDebe" name="La empresa le debe" fill="#e11d48" />
+                <Bar dataKey="debeEmpresa" name="Debe a la empresa" fill="#2563eb" />
+              </BarChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyBlock message="Sin tendencia disponible para el periodo seleccionado" />
+            <EmptyBlock
+              message={
+                isConductorFiltered
+                  ? "El conductor seleccionado no tiene saldos pendientes abiertos."
+                  : "Sin saldos pendientes para mostrar por conductor."
+              }
+            />
           )}
         </div>
       </section>
@@ -404,7 +540,11 @@ export default function DashboardLiquidacionesTab({ refreshKey }) {
                       <td className="px-4 py-2.5 text-slate-700">
                         <button
                           type="button"
-                          onClick={() => setConductorId(conductor.conductorId)}
+                          onClick={() => {
+                            setConductorId(conductor.conductorId);
+                            setConductorSearch(conductor.conductorNombre);
+                            setShowConductorOptions(false);
+                          }}
                           className="font-medium text-blue-600 hover:underline"
                         >
                           {conductor.conductorNombre}
