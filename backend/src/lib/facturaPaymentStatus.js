@@ -13,29 +13,40 @@ function sumPagos(pagos) {
   }, 0);
 }
 
-function computeFacturaPaymentStatus(facturaTotal, pagos, estadoActual) {
+function resolveTotalCobranza(facturaTotal, detraccionMonto = 0) {
+  const total = Math.max(0, toNum(facturaTotal));
+  const detraccion = Math.max(0, toNum(detraccionMonto));
+  return Math.max(0, total - detraccion);
+}
+
+function computeFacturaPaymentStatus(facturaTotal, pagos, estadoActual, detraccionMonto = 0) {
   const estado = typeof estadoActual === "string" ? estadoActual.trim().toUpperCase() : "";
   if (estado === "ANULADA") return "ANULADA";
 
   const total = Math.max(0, toNum(facturaTotal));
+  const totalCobranza = resolveTotalCobranza(total, detraccionMonto);
   const montoPagado = Math.max(0, sumPagos(pagos));
-  const saldo = Math.max(0, total - montoPagado);
+  const saldo = Math.max(0, totalCobranza - montoPagado);
 
   if (saldo <= 0) return "PAGADA";
   if (montoPagado > 0) return "PARCIAL";
   return "PENDIENTE";
 }
 
-function computeFacturaPaymentSnapshot(facturaTotal, pagos, estadoActual) {
+function computeFacturaPaymentSnapshot(facturaTotal, pagos, estadoActual, detraccionMonto = 0) {
   const total = Math.max(0, toNum(facturaTotal));
+  const detraccion = Math.max(0, toNum(detraccionMonto));
+  const totalCobranza = resolveTotalCobranza(total, detraccion);
   const montoPagado = Math.max(0, sumPagos(pagos));
-  const saldo = Math.max(0, total - montoPagado);
-  const status = computeFacturaPaymentStatus(total, pagos, estadoActual);
+  const saldo = Math.max(0, totalCobranza - montoPagado);
+  const status = computeFacturaPaymentStatus(total, pagos, estadoActual, detraccion);
   const isAnulada = status === "ANULADA";
 
   return {
     status,
     total,
+    detraccion,
+    totalCobranza,
     montoPagado,
     saldo,
     isAnulada,

@@ -133,6 +133,7 @@ router.get("/general", async (req, res, next) => {
         select: {
           fechaVencimiento: true,
           total: true,
+          detraccionMonto: true,
           estadoPago: true,
           pagos: { select: { monto: true } },
         },
@@ -145,7 +146,12 @@ router.get("/general", async (req, res, next) => {
     let facturasPendientesPago = 0;
     let facturasVencidasCount = 0;
     for (const factura of facturasKpisData) {
-      const payment = computeFacturaPaymentSnapshot(factura.total, factura.pagos, factura.estadoPago);
+      const payment = computeFacturaPaymentSnapshot(
+        factura.total,
+        factura.pagos,
+        factura.estadoPago,
+        factura.detraccionMonto
+      );
       if (payment.isClosed) continue;
 
       if (payment.status === "PENDIENTE") facturasPendientesPago++;
@@ -165,7 +171,6 @@ router.get("/general", async (req, res, next) => {
       serviciosTotal,
       serviciosConGuia,
       serviciosConFactura,
-      facturasConPago,
       serviciosConGuiaSinFactura,
       facturasSinServicioRango,
       facturasFlujoData,
@@ -174,9 +179,6 @@ router.get("/general", async (req, res, next) => {
       prisma.servicio.count({ where: { ...whereRango, guias: { some: {} } } }),
       prisma.servicio.count({
         where: { ...whereRango, orden: { facturas: { some: {} } } },
-      }),
-      prisma.factura.count({
-        where: { ...whereFacturasRango, pagos: { some: {} } },
       }),
       prisma.servicio.count({
         where: {
@@ -192,14 +194,30 @@ router.get("/general", async (req, res, next) => {
         where: whereFacturasRango,
         select: {
           total: true,
+          detraccionMonto: true,
           estadoPago: true,
           pagos: { select: { monto: true } },
         },
       }),
     ]);
 
+    const facturasConPago = facturasFlujoData.reduce((count, factura) => {
+      const payment = computeFacturaPaymentSnapshot(
+        factura.total,
+        factura.pagos,
+        factura.estadoPago,
+        factura.detraccionMonto
+      );
+      return payment.status === "PAGADA" ? count + 1 : count;
+    }, 0);
+
     const facturasSinPagoRango = facturasFlujoData.reduce((count, factura) => {
-      const payment = computeFacturaPaymentSnapshot(factura.total, factura.pagos, factura.estadoPago);
+      const payment = computeFacturaPaymentSnapshot(
+        factura.total,
+        factura.pagos,
+        factura.estadoPago,
+        factura.detraccionMonto
+      );
       if (payment.isClosed) return count;
       if (payment.montoPagado <= 0) return count + 1;
       return count;
@@ -241,6 +259,7 @@ router.get("/general", async (req, res, next) => {
           numero: true,
           fechaEmision: true,
           total: true,
+          detraccionMonto: true,
           estadoPago: true,
           moneda: true,
           ordenServicioId: true,
@@ -262,6 +281,7 @@ router.get("/general", async (req, res, next) => {
           fechaEmision: true,
           fechaVencimiento: true,
           total: true,
+          detraccionMonto: true,
           estadoPago: true,
           moneda: true,
           pagos: { select: { monto: true } },
@@ -307,6 +327,7 @@ router.get("/general", async (req, res, next) => {
           numero: true,
           fechaEmision: true,
           total: true,
+          detraccionMonto: true,
           estadoPago: true,
           moneda: true,
           pagos: { select: { monto: true } },
@@ -335,12 +356,22 @@ router.get("/general", async (req, res, next) => {
 
     const facturasObservadasRecientes = facturasObservadasRecientesRaw
       .filter((f) => {
-        const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+        const payment = computeFacturaPaymentSnapshot(
+          f.total,
+          f.pagos,
+          f.estadoPago,
+          f.detraccionMonto
+        );
         return f.estadoPago === "OBSERVADA" || (f.ordenServicioId == null && !payment.isClosed);
       })
       .slice(0, 10)
       .map((f) => {
-        const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+        const payment = computeFacturaPaymentSnapshot(
+          f.total,
+          f.pagos,
+          f.estadoPago,
+          f.detraccionMonto
+        );
         return {
           id: f.id,
           serie: f.serie,
@@ -356,12 +387,22 @@ router.get("/general", async (req, res, next) => {
 
     const facturasVencidasAlerta = facturasVencidasAlertaRaw
       .filter((f) => {
-        const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+        const payment = computeFacturaPaymentSnapshot(
+          f.total,
+          f.pagos,
+          f.estadoPago,
+          f.detraccionMonto
+        );
         return !payment.isClosed && payment.saldo > 0;
       })
       .slice(0, 10)
       .map((f) => {
-        const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+        const payment = computeFacturaPaymentSnapshot(
+          f.total,
+          f.pagos,
+          f.estadoPago,
+          f.detraccionMonto
+        );
         return {
           id: f.id,
           serie: f.serie,
@@ -379,7 +420,12 @@ router.get("/general", async (req, res, next) => {
       });
 
     const ultimasFacturasSerialized = ultimasFacturas.map((f) => {
-      const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+      const payment = computeFacturaPaymentSnapshot(
+        f.total,
+        f.pagos,
+        f.estadoPago,
+        f.detraccionMonto
+      );
       return {
         id: f.id,
         serie: f.serie,
@@ -479,6 +525,7 @@ router.get("/cobranza", async (req, res, next) => {
           fechaEmision: true,
           fechaVencimiento: true,
           total: true,
+          detraccionMonto: true,
           estadoPago: true,
           moneda: true,
           cliente: { select: { razonSocial: true, ruc: true } },
@@ -509,7 +556,12 @@ router.get("/cobranza", async (req, res, next) => {
     const facturasCriticasList = [];
 
     for (const f of facturasPendientesData) {
-      const payment = computeFacturaPaymentSnapshot(f.total, f.pagos, f.estadoPago);
+      const payment = computeFacturaPaymentSnapshot(
+        f.total,
+        f.pagos,
+        f.estadoPago,
+        f.detraccionMonto
+      );
       const montoPagado = payment.montoPagado;
       const saldo = payment.saldo;
 

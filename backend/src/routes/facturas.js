@@ -111,7 +111,12 @@ function enrichFacturaWithPaymentStatus(factura, { keepPagos = true } = {}) {
   if (!factura) return factura;
 
   const pagos = Array.isArray(factura.pagos) ? factura.pagos : [];
-  const payment = computeFacturaPaymentSnapshot(factura.total, pagos, factura.estadoPago);
+  const payment = computeFacturaPaymentSnapshot(
+    factura.total,
+    pagos,
+    factura.estadoPago,
+    factura.detraccionMonto
+  );
   const payload = keepPagos ? { ...factura } : (() => {
     const { pagos: _pagos, ...withoutPagos } = factura;
     return withoutPagos;
@@ -119,7 +124,7 @@ function enrichFacturaWithPaymentStatus(factura, { keepPagos = true } = {}) {
 
   return {
     ...payload,
-    estadoPago: payment.status,
+    estadoPagoCalculado: payment.status,
     montoPagado: round2(payment.montoPagado),
     saldoPendiente: round2(payment.saldo),
   };
@@ -783,21 +788,65 @@ router.patch("/:id", async (req, res, next) => {
     const body = validate(patchFacturaSchema, req.body, res);
     if (!body) return;
 
-    const factura = await prisma.factura.findUnique({ where: { id: validated.params.id } });
+    const factura = await prisma.factura.findUnique({
+      where: { id: validated.params.id },
+      select: {
+        id: true,
+        estadoPago: true,
+      },
+    });
     if (!factura) return res.status(404).json({ error: "Factura no encontrada." });
 
-    const updated = await prisma.factura.update({
-      where: { id: validated.params.id },
-      data: {
-        ...(body.estadoPago !== undefined && { estadoPago: body.estadoPago }),
-        ...(body.formaPago !== undefined && { formaPago: body.formaPago }),
-        ...(body.fechaVencimiento !== undefined && {
-          fechaVencimiento: body.fechaVencimiento ? new Date(body.fechaVencimiento) : null,
-        }),
-        ...(body.detraccionPorcentaje !== undefined && { detraccionPorcentaje: body.detraccionPorcentaje }),
-        ...(body.detraccionMonto !== undefined && { detraccionMonto: body.detraccionMonto }),
-      },
-      include: facturaInclude,
+    const updated = await prisma.$transaction(async (tx) => {
+      // Si se marca manualmente como PAGADA y aún hay saldo, generamos un pago automático
+      // para mantener consistencia con el estado real derivado por pagos/saldo.
+      if (body.estadoPago === "PAGADA") {
+        const facturaConPagos = await tx.factura.findUnique({
+          where: { id: validated.params.id },
+          select: {
+            id: true,
+            total: true,
+            detraccionMonto: true,
+            estadoPago: true,
+            pagos: { select: { monto: true } },
+          },
+        });
+
+        if (facturaConPagos) {
+          const payment = computeFacturaPaymentSnapshot(
+            facturaConPagos.total,
+            facturaConPagos.pagos,
+            facturaConPagos.estadoPago,
+            facturaConPagos.detraccionMonto
+          );
+
+          if (payment.status !== "ANULADA" && payment.saldo > 0) {
+            await tx.pago.create({
+              data: {
+                facturaId: facturaConPagos.id,
+                fechaPago: new Date(),
+                monto: payment.saldo,
+                medioPago: "AJUSTE_MANUAL",
+                observacion: "Pago automático generado al marcar factura como PAGADA.",
+              },
+            });
+          }
+        }
+      }
+
+      return tx.factura.update({
+        where: { id: validated.params.id },
+        data: {
+          ...(body.estadoPago !== undefined && { estadoPago: body.estadoPago }),
+          ...(body.formaPago !== undefined && { formaPago: body.formaPago }),
+          ...(body.fechaVencimiento !== undefined && {
+            fechaVencimiento: body.fechaVencimiento ? new Date(body.fechaVencimiento) : null,
+          }),
+          ...(body.detraccionPorcentaje !== undefined && { detraccionPorcentaje: body.detraccionPorcentaje }),
+          ...(body.detraccionMonto !== undefined && { detraccionMonto: body.detraccionMonto }),
+        },
+        include: facturaInclude,
+      });
     });
 
     req.log.info("Factura actualizada", {
