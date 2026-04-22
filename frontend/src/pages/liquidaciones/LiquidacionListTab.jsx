@@ -10,9 +10,12 @@ import {
   formatDate,
   getClienteReferencia,
   getConductorNombre,
+  getRegularizacionConfig,
+  getResultadoEconomicoConfig,
   getRutaLabel,
   getSaldoFavorTag,
   getServicioReferencia,
+  hasSaldoPendiente,
 } from "./liquidacion-helpers";
 
 const STATUS_TABS = [
@@ -49,7 +52,7 @@ export default function LiquidacionListTab({
 
       if (favorFilter === "EMPRESA" && getSaldoFavorTag(liquidacion) !== "EMPRESA") return false;
       if (favorFilter === "CONDUCTOR" && getSaldoFavorTag(liquidacion) !== "CONDUCTOR") return false;
-      if (favorFilter === "PENDIENTES" && liquidacion.status !== "PENDIENTE") return false;
+      if (favorFilter === "PENDIENTES" && !hasSaldoPendiente(liquidacion)) return false;
 
       if (search.trim()) {
         const query = search.toLowerCase();
@@ -113,9 +116,9 @@ export default function LiquidacionListTab({
             className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300"
           >
             <option value="TODOS">Todos los saldos</option>
-            <option value="PENDIENTES">Solo pendientes</option>
-            <option value="EMPRESA">Saldo a favor empresa</option>
-            <option value="CONDUCTOR">Saldo a favor conductor</option>
+            <option value="PENDIENTES">Saldo pendiente real</option>
+            <option value="EMPRESA">Pendiente favor empresa</option>
+            <option value="CONDUCTOR">Pendiente favor conductor</option>
           </select>
 
           <input
@@ -148,13 +151,15 @@ export default function LiquidacionListTab({
               {/* ── Cards móvil (< md) ── */}
               <div className="divide-y md:hidden">
                 {filtered.map((liquidacion) => {
-                  const isActive   = selectedLiquidacionId === liquidacion.id;
-                  const saldoTag   = getSaldoFavorTag(liquidacion);
-                  const saldoCls   = saldoTag === "EMPRESA"
+                  const isActive = selectedLiquidacionId === liquidacion.id;
+                  const saldoTag = getSaldoFavorTag(liquidacion);
+                  const saldoCls = saldoTag === "EMPRESA"
                     ? "text-emerald-700"
                     : saldoTag === "CONDUCTOR"
-                    ? "text-amber-700"
+                    ? "text-rose-700"
                     : "text-slate-700";
+                  const resultadoCfg = getResultadoEconomicoConfig(liquidacion);
+                  const regularizacionCfg = getRegularizacionConfig(liquidacion);
 
                   return (
                     <div
@@ -169,8 +174,11 @@ export default function LiquidacionListTab({
                         <span className="text-sm font-semibold text-blue-600">
                           {liquidacion.servicioId
                             ? getServicioReferencia(liquidacion.servicio)
-                            : <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">Sin vincular</span>
-                          }
+                            : (
+                              <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
+                                Sin vincular
+                              </span>
+                            )}
                         </span>
                         <LiquidacionStatusBadge status={liquidacion.status} />
                       </div>
@@ -186,12 +194,20 @@ export default function LiquidacionListTab({
                         {getConductorNombre(liquidacion.conductor || liquidacion.servicio?.conductor)}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-500">{getRutaLabel(liquidacion.servicio)}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                        <span className={cn("rounded-full px-2 py-0.5 font-medium", resultadoCfg.cls)}>
+                          {resultadoCfg.label}
+                        </span>
+                        <span className={cn("rounded-full px-2 py-0.5 font-medium", regularizacionCfg.cls)}>
+                          {regularizacionCfg.label}
+                        </span>
+                      </div>
                       <div className="mt-1.5 flex items-center gap-3">
                         <span className="text-xs text-slate-500">
-                          Entregado: <span className="font-medium text-slate-700">{formatCurrency(liquidacion.montoEntregado)}</span>
+                          Base: <span className="font-medium text-slate-700">{formatCurrency(liquidacion.saldo)}</span>
                         </span>
                         <span className="text-xs text-slate-500">
-                          Saldo: <span className={cn("font-semibold", saldoCls)}>{formatCurrency(liquidacion.saldo)}</span>
+                          Pendiente: <span className={cn("font-semibold", saldoCls)}>{formatCurrency(liquidacion.saldoPendiente)}</span>
                         </span>
                       </div>
                     </div>
@@ -211,11 +227,12 @@ export default function LiquidacionListTab({
                         "Placa",
                         "Cliente / pagador",
                         "Ruta",
-                        "Status",
+                        "Rendicion",
+                        "Resultado economico",
                         "Monto entregado",
                         "Total gastos",
-                        "Saldo",
-                        "Detalle saldo",
+                        "Saldo base",
+                        "Saldo pendiente",
                       ].map((heading) => (
                         <th key={heading} className="px-4 py-2.5 text-xs font-semibold text-slate-500">
                           {heading}
@@ -226,6 +243,8 @@ export default function LiquidacionListTab({
                   <tbody>
                     {filtered.map((liquidacion) => {
                       const isActive = selectedLiquidacionId === liquidacion.id;
+                      const saldoPendiente = Number(liquidacion.saldoPendiente ?? 0);
+                      const resultadoCfg = getResultadoEconomicoConfig(liquidacion);
 
                       return (
                         <tr
@@ -261,6 +280,11 @@ export default function LiquidacionListTab({
                           <td className="px-4 py-3">
                             <LiquidacionStatusBadge status={liquidacion.status} />
                           </td>
+                          <td className="px-4 py-3">
+                            <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", resultadoCfg.cls)}>
+                              {resultadoCfg.label}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-sm text-slate-700">
                             {formatCurrency(liquidacion.montoEntregado)}
                           </td>
@@ -270,8 +294,17 @@ export default function LiquidacionListTab({
                           <td className="px-4 py-3 text-sm font-semibold text-slate-800">
                             {formatCurrency(liquidacion.saldo)}
                           </td>
-                          <td className="px-4 py-3 text-sm text-slate-600">
-                            {liquidacion.detalleSaldo || "-"}
+                          <td
+                            className={cn(
+                              "px-4 py-3 text-sm font-semibold",
+                              saldoPendiente > 0
+                                ? "text-blue-700"
+                                : saldoPendiente < 0
+                                  ? "text-rose-700"
+                                  : "text-green-700",
+                            )}
+                          >
+                            {formatCurrency(liquidacion.saldoPendiente)}
                           </td>
                         </tr>
                       );

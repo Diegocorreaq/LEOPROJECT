@@ -1,5 +1,6 @@
 const { z } = require("zod");
 const { LIQUIDACION_STATUS } = require("../modules/liquidaciones/computeLiquidacion");
+const { LIQUIDACION_SALDO_MOVIMIENTO_TIPOS } = require("../modules/liquidaciones/settlement");
 
 const moneySchema = z.preprocess(
   (value) => (value === "" || value == null ? 0 : value),
@@ -43,9 +44,35 @@ const patchLiquidacionStatusSchema = z.object({
   }),
 }).strict();
 
+const montoMovimientoSchema = z.preprocess(
+  (value) => (value === "" || value == null ? 0 : value),
+  z.coerce.number().gt(0, "El monto debe ser mayor a 0"),
+);
+
+const createLiquidacionSaldoMovimientoSchema = z.object({
+  tipo: z.enum(LIQUIDACION_SALDO_MOVIMIENTO_TIPOS, {
+    required_error: `tipo invalido. Valores permitidos: ${LIQUIDACION_SALDO_MOVIMIENTO_TIPOS.join(", ")}`,
+  }),
+  monto: montoMovimientoSchema,
+  liquidacionDestinoId: z.preprocess(
+    (value) => (value == null || value === "" ? undefined : value),
+    z.string().uuid("liquidacionDestinoId debe ser un UUID valido").optional(),
+  ),
+  fechaMovimiento: z.preprocess(
+    (value) => (value == null || value === "" ? undefined : value),
+    z.coerce.date().optional(),
+  ),
+  observacion: z.preprocess(
+    (value) => (value == null ? undefined : String(value).trim()),
+    z.string().max(2000, "observacion demasiado larga").optional(),
+  ),
+}).strict();
+
 module.exports = {
   LIQUIDACION_STATUS,
+  LIQUIDACION_SALDO_MOVIMIENTO_TIPOS,
   createLiquidacionSchema,
+  createLiquidacionSaldoMovimientoSchema,
   patchLiquidacionStatusSchema,
   updateLiquidacionSchema,
 };

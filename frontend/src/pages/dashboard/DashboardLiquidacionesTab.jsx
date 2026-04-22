@@ -4,10 +4,6 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle2,
-  Clock,
-  FileSpreadsheet,
-  Receipt,
-  TrendingUp,
   User,
   Wallet,
 } from "lucide-react";
@@ -103,23 +99,55 @@ const TrendTooltip = ({ active, payload, label }) => {
   );
 };
 
-export default function DashboardLiquidacionesTab({ rango, refreshKey }) {
+function formatConductorNombre(conductor) {
+  if (!conductor) return "Sin conductor";
+  return [conductor.nombre, conductor.apPaterno, conductor.apMaterno].filter(Boolean).join(" ").trim() || "Sin conductor";
+}
+
+export default function DashboardLiquidacionesTab({ refreshKey }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [conductores, setConductores] = useState([]);
+  const [conductorId, setConductorId] = useState("");
+  const [topOrder, setTopOrder] = useState("DEBEN_MAS_A_EMPRESA");
+  const [loadingConductores, setLoadingConductores] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoadingConductores(true);
+    api
+      .get("/conductores?activo=true&limit=100")
+      .then((result) => {
+        if (!active) return;
+        setConductores(Array.isArray(result) ? result : []);
+      })
+      .catch(() => {
+        if (active) setConductores([]);
+      })
+      .finally(() => {
+        if (active) setLoadingConductores(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.get(`/dashboard/liquidaciones?rango=${rango}`);
+      const params = new URLSearchParams({ topOrder });
+      if (conductorId) params.set("conductorId", conductorId);
+      const result = await api.get(`/dashboard/liquidaciones?${params.toString()}`);
       setData(result);
     } catch (err) {
       setError(err.message ?? "Error al cargar el dashboard de liquidaciones");
     } finally {
       setLoading(false);
     }
-  }, [rango, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [conductorId, refreshKey, topOrder]);
 
   useEffect(() => {
     load();
@@ -151,22 +179,59 @@ export default function DashboardLiquidacionesTab({ rango, refreshKey }) {
   if (!data) return null;
 
   const kpis = data.kpis ?? {};
-  const porEstado = data.porEstado ?? [];
+  const porResultadoEconomico = (data.porResultadoEconomico ?? []).filter((item) => item.resultado !== "CUADRADA");
   const serie = data.serie ?? [];
   const topConductores = data.topConductores ?? [];
+  const selectedConductorSummary = data.selectedConductorSummary ?? null;
   const pendientes = data.alertas?.pendientes ?? [];
+  const isConductorFiltered = Boolean(conductorId);
 
-  const totalEstados = porEstado.reduce((sum, item) => sum + Number(item.cantidad ?? 0), 0);
+  const totalResultados = porResultadoEconomico.reduce((sum, item) => sum + Number(item.cantidad ?? 0), 0);
 
   const chartData = serie.map((item) => ({
     label: item.label,
     montoEntregado: Number(item.montoEntregado ?? 0),
     totalGastos: Number(item.totalGastos ?? 0),
-    saldoNeto: Number(item.saldoNeto ?? 0),
+    saldoNeto: Number(item.saldoPendienteNeto ?? item.saldoNeto ?? 0),
   }));
 
   return (
     <div className="space-y-6 p-6">
+      <section>
+        <SectionTitle>Filtros</SectionTitle>
+        <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conductor</span>
+            <select
+              value={conductorId}
+              onChange={(event) => setConductorId(event.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              disabled={loadingConductores}
+            >
+              <option value="">Todos</option>
+              {conductores.map((conductor) => (
+                <option key={conductor.id} value={conductor.id}>
+                  {formatConductorNombre(conductor)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Orden top conductores</span>
+            <select
+              value={topOrder}
+              onChange={(event) => setTopOrder(event.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60"
+              disabled={isConductorFiltered}
+            >
+              <option value="EMPRESA_LE_DEBE_MAS">Le deben mas</option>
+              <option value="DEBEN_MAS_A_EMPRESA">Deben mas a la empresa</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
       <section>
         <SectionTitle
           action={
@@ -178,129 +243,146 @@ export default function DashboardLiquidacionesTab({ rango, refreshKey }) {
             </Link>
           }
         >
-          KPIs de liquidaciones
+          KPIs por resultado economico
         </SectionTitle>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-          <KpiCard label="Liquidaciones del periodo" value={kpis.totalLiquidaciones} icon={FileSpreadsheet} color="slate" />
-          <KpiCard label="Monto entregado" value={kpis.montoEntregado} icon={Wallet} color="blue" money />
-          <KpiCard label="Total gastos" value={kpis.totalGastos} icon={Receipt} color="slate" money />
-          <KpiCard label="Saldo neto" value={kpis.saldoNeto} icon={TrendingUp} color="green" money />
-          <KpiCard label="Pendientes" value={kpis.pendientes} icon={Clock} color="amber" highlight />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
+          <KpiCard label="Sin rendicion" value={kpis.sinRendicion} icon={AlertTriangle} color="amber" />
+          <KpiCard label="Saldo neto pendiente" value={kpis.saldoNeto} icon={Wallet} color="slate" money />
           <KpiCard
-            label="Favor empresa"
+            label="Deben a la empresa"
             value={kpis.favorEmpresa}
             icon={Building2}
             color="blue"
-            sublabel={formatCurrency(kpis.montoFavorEmpresa)}
+            sublabel={formatCurrency(kpis.totalFavorEmpresaPendiente ?? kpis.montoFavorEmpresa)}
           />
           <KpiCard
-            label="Favor conductor"
+            label="La empresa les debe"
             value={kpis.favorConductor}
             icon={User}
             color="violet"
-            sublabel={formatCurrency(kpis.montoFavorConductor)}
+            sublabel={formatCurrency(kpis.totalFavorConductorPendiente ?? kpis.montoFavorConductor)}
           />
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div>
-          <SectionTitle>Distribución por estado</SectionTitle>
-          <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            {(porEstado.length === 0 || totalEstados === 0) && (
-              <p className="py-6 text-center text-sm text-slate-400">Sin liquidaciones en el periodo</p>
-            )}
-
-            {porEstado.map((estadoItem) => {
-              const estado = estadoItem.estado;
-              const cantidad = Number(estadoItem.cantidad ?? 0);
-              const pct = totalEstados > 0 ? Math.round((cantidad / totalEstados) * 100) : 0;
-              const isPendiente = estado === "PENDIENTE";
-
-              return (
-                <div
-                  key={estado}
-                  className={cn(
-                    "rounded-lg border px-3 py-2",
-                    isPendiente ? "border-amber-200 bg-amber-50" : "border-green-200 bg-green-50",
-                  )}
-                >
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-700">{estado}</span>
-                    <span className={cn("font-bold", isPendiente ? "text-amber-700" : "text-green-700")}>
-                      {formatCount(cantidad)} ({pct}%)
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-white/60">
-                    <div
-                      className={cn("h-1.5 rounded-full transition-all", isPendiente ? "bg-amber-500" : "bg-green-500")}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div>
-          <SectionTitle>Tendencia del periodo</SectionTitle>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            {kpis.totalLiquidaciones > 0 ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={chartData} margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fontSize: 11, fill: "#64748b" }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "#64748b" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={formatCompactMoney}
-                  />
-                  <Tooltip content={<TrendTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                  <Line
-                    type="monotone"
-                    dataKey="montoEntregado"
-                    name="Entregado"
-                    stroke="#2563eb"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="totalGastos"
-                    name="Gastos"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="saldoNeto"
-                    name="Saldo neto"
-                    stroke="#0f172a"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyBlock message="Sin tendencia disponible para el periodo seleccionado" />
-            )}
-          </div>
         </div>
       </section>
 
       <section>
-        <SectionTitle>Top conductores</SectionTitle>
+        <SectionTitle>Resultado economico</SectionTitle>
+        <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          {(porResultadoEconomico.length === 0 || totalResultados === 0) && (
+            <p className="py-6 text-center text-sm text-slate-400">Sin datos en el periodo</p>
+          )}
+          {porResultadoEconomico.map((item) => {
+            const qty = Number(item.cantidad ?? 0);
+            const pct = totalResultados > 0 ? Math.round((qty / totalResultados) * 100) : 0;
+            return (
+              <div key={item.resultado} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700">{item.resultado}</span>
+                  <span className="font-bold text-slate-700">
+                    {formatCount(qty)} ({pct}%)
+                  </span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-white/60">
+                  <div className="h-1.5 rounded-full bg-slate-500" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle>Tendencia del saldo pendiente</SectionTitle>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          {kpis.totalLiquidaciones > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={chartData} margin={{ top: 4, right: 12, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={formatCompactMoney}
+                />
+                <Tooltip content={<TrendTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Line type="monotone" dataKey="montoEntregado" name="Entregado" stroke="#2563eb" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="totalGastos" name="Gastos" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="saldoNeto" name="Saldo pendiente neto" stroke="#0f172a" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyBlock message="Sin tendencia disponible para el periodo seleccionado" />
+          )}
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle>
+          {isConductorFiltered
+            ? "Resumen del conductor seleccionado"
+            : topOrder === "EMPRESA_LE_DEBE_MAS"
+              ? "Top conductores - la empresa les debe mas"
+              : "Top conductores - deben mas a la empresa"}
+        </SectionTitle>
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-          {topConductores.length === 0 ? (
+          {isConductorFiltered ? (
+            !selectedConductorSummary ? (
+              <div className="flex h-24 items-center justify-center text-sm text-slate-400">
+                Sin datos para el conductor filtrado
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-xs text-slate-500">Conductor</p>
+                  <p className="text-sm font-semibold text-slate-800">{selectedConductorSummary.conductorNombre}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-xs text-slate-500">Debe a la empresa</p>
+                  <p className="text-sm font-semibold text-blue-700">
+                    {formatCurrency(selectedConductorSummary.totalFavorEmpresaPendiente)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-xs text-slate-500">La empresa le debe</p>
+                  <p className="text-sm font-semibold text-rose-700">
+                    {formatCurrency(selectedConductorSummary.totalFavorConductorPendiente)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-xs text-slate-500">Liquidaciones</p>
+                  <p className="text-sm font-semibold text-slate-800">{formatCount(selectedConductorSummary.cantidadLiquidaciones)}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-xs text-slate-500">Con saldo abierto</p>
+                  <p className="text-sm font-semibold text-amber-700">
+                    {formatCount(selectedConductorSummary.liquidacionesConPendienteReal)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-xs text-slate-500">Saldo neto consolidado</p>
+                  <p
+                    className={cn(
+                      "text-sm font-semibold",
+                      Number(selectedConductorSummary.deudaNetaPendiente ?? 0) > 0
+                        ? "text-blue-700"
+                        : Number(selectedConductorSummary.deudaNetaPendiente ?? 0) < 0
+                          ? "text-rose-700"
+                          : "text-green-700",
+                    )}
+                  >
+                    {formatCurrency(selectedConductorSummary.deudaNetaPendiente)}
+                  </p>
+                </div>
+              </div>
+            )
+          ) : topConductores.length === 0 ? (
             <div className="flex h-24 items-center justify-center text-sm text-slate-400">
               Sin conductores relevantes en este periodo
             </div>
@@ -311,47 +393,32 @@ export default function DashboardLiquidacionesTab({ rango, refreshKey }) {
                   <tr className="border-b border-slate-100 bg-slate-50">
                     <th className="px-4 py-2.5 text-left font-medium text-slate-500">Conductor</th>
                     <th className="px-4 py-2.5 text-right font-medium text-slate-500">Liquidaciones</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-slate-500">Entregado</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-slate-500">Gastos</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-slate-500">Saldo neto</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-slate-500">Pendientes</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-slate-500">Con saldo abierto</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-slate-500">Debe a la empresa</th>
+                    <th className="px-4 py-2.5 text-right font-medium text-slate-500">La empresa le debe</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {topConductores.map((conductor) => (
                     <tr key={conductor.conductorId} className="hover:bg-slate-50">
                       <td className="px-4 py-2.5 text-slate-700">
-                        <Link
-                          to={`/liquidaciones?conductorId=${conductor.conductorId}`}
+                        <button
+                          type="button"
+                          onClick={() => setConductorId(conductor.conductorId)}
                           className="font-medium text-blue-600 hover:underline"
                         >
                           {conductor.conductorNombre}
-                        </Link>
+                        </button>
                       </td>
                       <td className="px-4 py-2.5 text-right text-slate-700">{formatCount(conductor.cantidadLiquidaciones)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-700">{formatCurrency(conductor.montoEntregado)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-700">{formatCurrency(conductor.totalGastos)}</td>
-                      <td
-                        className={cn(
-                          "px-4 py-2.5 text-right font-semibold",
-                          Number(conductor.saldoNeto ?? 0) > 0
-                            ? "text-green-700"
-                            : Number(conductor.saldoNeto ?? 0) < 0
-                              ? "text-amber-700"
-                              : "text-slate-700",
-                        )}
-                      >
-                        {formatCurrency(conductor.saldoNeto)}
+                      <td className="px-4 py-2.5 text-right text-slate-700">
+                        {formatCount(conductor.liquidacionesConPendienteReal)}
                       </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <span
-                          className={cn(
-                            "inline-flex min-w-8 items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                            conductor.pendientes > 0 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600",
-                          )}
-                        >
-                          {formatCount(conductor.pendientes)}
-                        </span>
+                      <td className="px-4 py-2.5 text-right text-blue-700">
+                        {formatCurrency(conductor.totalFavorEmpresaPendiente)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-rose-700">
+                        {formatCurrency(conductor.totalFavorConductorPendiente)}
                       </td>
                     </tr>
                   ))}
@@ -366,17 +433,17 @@ export default function DashboardLiquidacionesTab({ rango, refreshKey }) {
         <SectionTitle
           action={
             <Link to="/liquidaciones" className="text-xs text-amber-600 hover:underline">
-              Ir al módulo operativo
+              Ir al modulo operativo
             </Link>
           }
         >
-          Requieren atención
+          Liquidaciones abiertas
         </SectionTitle>
         <div className="rounded-xl border border-amber-200 bg-white shadow-sm">
           {pendientes.length === 0 ? (
             <div className="flex h-24 items-center justify-center gap-2 text-sm text-green-700">
               <CheckCircle2 className="h-5 w-5" />
-              No hay liquidaciones pendientes en el periodo
+              No hay liquidaciones con saldo pendiente en el periodo
             </div>
           ) : (
             <div className="divide-y divide-amber-100">
@@ -385,35 +452,35 @@ export default function DashboardLiquidacionesTab({ rango, refreshKey }) {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-slate-800">{item.conductorNombre}</p>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      {formatDate(item.fechaServicio)} · {item.ruta}
+                      {formatDate(item.fechaServicio)} - {item.ruta}
                     </p>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
-                      <span className="rounded-md bg-blue-50 px-2 py-0.5 text-blue-700">
-                        Entregado: {formatCurrency(item.montoEntregado)}
-                      </span>
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-700">
-                        Gastos: {formatCurrency(item.totalGastos)}
+                        Base: {formatCurrency(item.saldo)}
                       </span>
                       <span
                         className={cn(
                           "rounded-md px-2 py-0.5 font-semibold",
-                          Number(item.saldo ?? 0) > 0 ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700",
+                          Number(item.saldoPendiente ?? 0) > 0 ? "bg-blue-50 text-blue-700" : "bg-rose-50 text-rose-700",
                         )}
                       >
-                        Saldo: {formatCurrency(item.saldo)}
+                        {Number(item.saldoPendiente ?? 0) > 0 ? "Debe a la empresa" : "La empresa le debe"}: {formatCurrency(item.saldoPendiente)}
+                      </span>
+                      <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">
+                        {item.estadoRegularizacion}
                       </span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3 self-start sm:self-auto">
                     <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">
-                      {item.diasPendiente}d pendiente
+                      {item.diasPendiente}d abierto
                     </span>
                     <Link
                       to={`/liquidaciones?liquidacionId=${item.id}`}
                       className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50"
                     >
-                      Ver liquidación
+                      Ver liquidacion
                     </Link>
                   </div>
                 </div>

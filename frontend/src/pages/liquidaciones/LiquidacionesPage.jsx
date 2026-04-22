@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import LiquidacionFormTab from "./LiquidacionFormTab";
 import LiquidacionListTab from "./LiquidacionListTab";
-import { getSaldoFavorTag } from "./liquidacion-helpers";
+import { getSaldoFavorTag, hasSaldoPendiente } from "./liquidacion-helpers";
 
 function KpiBadge({ label, value, variant = "default" }) {
   const variants = {
@@ -126,7 +126,8 @@ export default function LiquidacionesPage() {
   }
 
   const totals = useMemo(() => {
-    const pendientes = liquidaciones.filter((liquidacion) => liquidacion.status === "PENDIENTE").length;
+    const pendientesRendicion = liquidaciones.filter((liquidacion) => liquidacion.status === "PENDIENTE").length;
+    const pendientesSaldo = liquidaciones.filter((liquidacion) => hasSaldoPendiente(liquidacion)).length;
     const favorEmpresa = liquidaciones.filter(
       (liquidacion) => getSaldoFavorTag(liquidacion) === "EMPRESA",
     ).length;
@@ -136,7 +137,8 @@ export default function LiquidacionesPage() {
 
     return {
       total: liquidaciones.length,
-      pendientes,
+      pendientesRendicion,
+      pendientesSaldo,
       favorEmpresa,
       favorConductor,
     };
@@ -165,9 +167,10 @@ export default function LiquidacionesPage() {
               {/* KPIs en línea */}
               <div className="flex flex-wrap items-center gap-2 sm:ml-4 sm:pl-4 sm:border-l sm:border-slate-200">
                 <KpiBadge label="total" value={totals.total} />
-                <KpiBadge label="pendientes" value={totals.pendientes} variant="amber" />
-                <KpiBadge label="saldo empresa" value={totals.favorEmpresa} variant="blue" />
-                <KpiBadge label="saldo conductor" value={totals.favorConductor} variant="violet" />
+                <KpiBadge label="rendicion pendiente" value={totals.pendientesRendicion} variant="amber" />
+                <KpiBadge label="saldo pendiente real" value={totals.pendientesSaldo} variant="amber" />
+                <KpiBadge label="favor empresa (pend.)" value={totals.favorEmpresa} variant="blue" />
+                <KpiBadge label="favor conductor (pend.)" value={totals.favorConductor} variant="violet" />
               </div>
             </div>
 

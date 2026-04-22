@@ -1,5 +1,6 @@
 const express = require("express");
 const { z } = require("zod");
+const { Prisma } = require("@prisma/client");
 const prisma = require("../lib/prisma");
 const authMiddleware = require("../middleware/auth");
 const { requireAdmin, requireOperaciones } = require("../middleware/rbac");
@@ -10,11 +11,19 @@ const { applyPaginationHeaders, resolvePagination } = require("../lib/pagination
 const { validate, validateRequest } = require("../lib/validate");
 const {
   LIQUIDACION_STATUS,
+  createLiquidacionSaldoMovimientoSchema,
   createLiquidacionSchema,
   patchLiquidacionStatusSchema,
   updateLiquidacionSchema,
 } = require("../validators/liquidaciones.schema");
 const { computeLiquidacion } = require("../modules/liquidaciones/computeLiquidacion");
+const { getLiquidacionEstadoFinanciero, groupMovimientosByLiquidacion } = require("../modules/liquidaciones/settlement");
+const {
+  createLiquidacionSaldoMovimiento,
+  findMovimientosByLiquidacionIds,
+  findMovimientosForLiquidacion,
+  serializeMovimiento,
+} = require("../modules/liquidaciones/saldoMovimientos");
 const {
   booleanQueryField,
   enumQueryField,
@@ -108,10 +117,10 @@ function serializeServicio(servicio) {
   };
 }
 
-function serializeLiquidacion(liquidacion) {
+function serializeLiquidacion(liquidacion, movimientos = []) {
   if (!liquidacion) return null;
 
-  return {
+  const serialized = {
     ...liquidacion,
     montoEntregado: toNumber(liquidacion.montoEntregado),
     viaticos: toNumber(liquidacion.viaticos),
@@ -128,6 +137,16 @@ function serializeLiquidacion(liquidacion) {
         }
       : null,
     servicio: serializeServicio(liquidacion.servicio),
+  };
+
+  const settlement = getLiquidacionEstadoFinanciero({
+    liquidacion: serialized,
+    movimientos,
+  });
+
+  return {
+    ...serialized,
+    ...settlement,
   };
 }
 
@@ -220,12 +239,26 @@ function buildLiquidacionData(body, servicio) {
 }
 
 async function getLiquidacionDetalle(db, liquidacionId) {
-  const liquidacion = await db.liquidacion.findUnique({
-    where: { id: liquidacionId },
-    include: liquidacionInclude,
-  });
+  const [liquidacion, movimientos] = await Promise.all([
+    db.liquidacion.findUnique({
+      where: { id: liquidacionId },
+      include: liquidacionInclude,
+    }),
+    findMovimientosForLiquidacion(db, liquidacionId, { includeRelations: false, orderDirection: "asc" }),
+  ]);
 
-  return liquidacion ? serializeLiquidacion(liquidacion) : null;
+  return liquidacion ? serializeLiquidacion(liquidacion, movimientos) : null;
+}
+
+async function mapLiquidacionesWithFinancialState(db, liquidaciones) {
+  const liquidacionIds = liquidaciones.map((item) => item.id).filter(Boolean);
+  const movimientos = await findMovimientosByLiquidacionIds(db, liquidacionIds, {
+    includeRelations: false,
+    orderDirection: "asc",
+  });
+  const grouped = groupMovimientosByLiquidacion(movimientos);
+
+  return liquidaciones.map((liquidacion) => serializeLiquidacion(liquidacion, grouped.get(liquidacion.id) ?? []));
 }
 
 function scoreServicio(servicio, referencia) {
@@ -361,11 +394,11 @@ router.get("/", async (req, res, next) => {
         take: pagination.take,
       }),
     ]);
+    const liquidacionesConEstado = await mapLiquidacionesWithFinancialState(prisma, liquidaciones);
 
     applyPaginationHeaders(res, { ...pagination, total });
     res.json(
-      liquidaciones
-        .map(serializeLiquidacion)
+      liquidacionesConEstado
         .sort(
           (a, b) =>
             new Date(b.servicio?.fechaServicio ?? b.createdAt).getTime() -
@@ -503,6 +536,117 @@ router.get("/:id", async (req, res, next) => {
     }
 
     res.json(liquidacion);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/movimientos-saldo", async (req, res, next) => {
+  try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
+    const liquidacionId = validated.params.id;
+    const [liquidacionRaw, movimientos] = await Promise.all([
+      prisma.liquidacion.findUnique({
+        where: { id: liquidacionId },
+        include: liquidacionInclude,
+      }),
+      findMovimientosForLiquidacion(prisma, liquidacionId, {
+        includeRelations: true,
+        orderDirection: "asc",
+      }),
+    ]);
+
+    if (!liquidacionRaw) {
+      return res.status(404).json({ error: "Liquidacion no encontrada." });
+    }
+
+    const liquidacion = serializeLiquidacion(liquidacionRaw, movimientos);
+
+    res.json({
+      liquidacionId,
+      estadoRendicion: liquidacion.estadoRendicion,
+      resultadoEconomico: liquidacion.resultadoEconomico,
+      estadoRegularizacion: liquidacion.estadoRegularizacion,
+      saldoBase: liquidacion.saldoBase,
+      saldoPendiente: liquidacion.saldoPendiente,
+      montoRegularizado: liquidacion.montoRegularizado,
+      montoPendienteAbsoluto: liquidacion.montoPendienteAbsoluto,
+      movimientos: movimientos.map((movimiento) =>
+        serializeMovimiento(movimiento, { liquidacionId: liquidacionId }),
+      ),
+      liquidacion,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/movimientos-saldo", async (req, res, next) => {
+  try {
+    const validated = validateRequest({ params: idParamSchema }, req, res);
+    if (!validated) return;
+
+    const body = validate(createLiquidacionSaldoMovimientoSchema, req.body, res);
+    if (!body) return;
+
+    const result = await prisma.$transaction(
+      async (tx) =>
+        createLiquidacionSaldoMovimiento(tx, {
+          liquidacionOrigenId: validated.params.id,
+          ...body,
+        }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+    req.log.info("Movimiento de saldo registrado", {
+      movimientoId: result.movimiento.id,
+      liquidacionOrigenId: result.movimiento.liquidacionOrigenId,
+      liquidacionDestinoId: result.movimiento.liquidacionDestinoId,
+      tipo: result.movimiento.tipo,
+      monto: Number(result.movimiento.monto),
+      usuarioId: req.user.id,
+    });
+
+    await recordAuditEvent({
+      entityType: "LiquidacionSaldoMovimiento",
+      entityId: result.movimiento.id,
+      action: "create",
+      req,
+      metadata: {
+        liquidacionOrigenId: result.movimiento.liquidacionOrigenId,
+        liquidacionDestinoId: result.movimiento.liquidacionDestinoId,
+        conductorId: result.movimiento.conductorId,
+        tipo: result.movimiento.tipo,
+        monto: Number(result.movimiento.monto),
+      },
+    });
+
+    await Promise.all(
+      result.liquidacionesImpactadas.map((liquidacion) =>
+        recordAuditEvent({
+          entityType: "Liquidacion",
+          entityId: liquidacion.id,
+          action: "saldo_movement",
+          req,
+          metadata: {
+            movimientoId: result.movimiento.id,
+            tipo: result.movimiento.tipo,
+            saldoPendiente: liquidacion.saldoPendiente,
+            estadoRegularizacion: liquidacion.estadoRegularizacion,
+          },
+        }),
+      ),
+    );
+
+    res.status(201).json({
+      movimiento: serializeMovimiento(result.movimiento, {
+        liquidacionId: validated.params.id,
+      }),
+      liquidacionesImpactadas: result.liquidacionesImpactadas,
+      message: "Movimiento de saldo registrado correctamente",
+    });
   } catch (err) {
     next(err);
   }
@@ -661,9 +805,13 @@ router.patch("/:id/status", async (req, res, next) => {
       req,
       metadata: { statusAnterior: existing.status, statusNuevo: body.status },
     });
+    const movimientos = await findMovimientosForLiquidacion(prisma, updated.id, {
+      includeRelations: false,
+      orderDirection: "asc",
+    });
 
     res.json({
-      ...serializeLiquidacion(updated),
+      ...serializeLiquidacion(updated, movimientos),
       message: "Status actualizado correctamente",
     });
   } catch (err) {
@@ -734,6 +882,18 @@ router.delete("/:id", requireAdmin, async (req, res, next) => {
 
     if (!existing) {
       return res.status(404).json({ error: "Liquidacion no encontrada." });
+    }
+
+    const movimientosRelacionados = await prisma.liquidacionSaldoMovimiento.count({
+      where: {
+        OR: [{ liquidacionOrigenId: validated.params.id }, { liquidacionDestinoId: validated.params.id }],
+      },
+    });
+
+    if (movimientosRelacionados > 0) {
+      return res.status(409).json({
+        error: "No se puede eliminar la liquidacion porque tiene movimientos de saldo asociados.",
+      });
     }
 
     await prisma.$transaction(async (tx) => {

@@ -17,7 +17,13 @@ const { requireOperaciones } = require("../middleware/rbac");
 const { serializeServiciosEstado } = require("../lib/servicioEstado");
 const { computeFacturaPaymentSnapshot } = require("../lib/facturaPaymentStatus");
 const { validate } = require("../lib/validate");
-const { isoDateQueryField } = require("../validators/common.schema");
+const { isoDateQueryField, uuidQueryField } = require("../validators/common.schema");
+const {
+  attachLiquidacionEstadoFinanciero,
+  computeConductorSettlementSummary,
+  groupMovimientosByLiquidacion,
+} = require("../modules/liquidaciones/settlement");
+const { findMovimientosByLiquidacionIds } = require("../modules/liquidaciones/saldoMovimientos");
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -758,9 +764,11 @@ router.get("/cobranza", async (req, res, next) => {
 
 const liquidacionesDashboardQuerySchema = z
   .object({
-    rango: z.enum(["today", "7d", "30d", "month"]).optional(),
-    desde: isoDateQueryField("desde"),
-    hasta: isoDateQueryField("hasta"),
+    conductorId: uuidQueryField("conductorId"),
+    topOrder: z.preprocess(
+      (value) => (typeof value === "string" ? value.trim().toUpperCase() : value),
+      z.enum(["EMPRESA_LE_DEBE_MAS", "DEBEN_MAS_A_EMPRESA"]).optional(),
+    ),
   })
   .strict();
 
@@ -769,26 +777,13 @@ router.get("/liquidaciones", async (req, res, next) => {
     const query = validate(liquidacionesDashboardQuerySchema, req.query, res, "query");
     if (!query) return;
 
-    const rango = query.rango ?? "30d";
-    const { desde, hasta } = resolveGeneralRange(rango, query.desde, query.hasta);
+    const conductorId = query.conductorId ?? null;
+    const topOrder = query.topOrder ?? "DEBEN_MAS_A_EMPRESA";
     const ahora = new Date();
-    const spanDays = Math.max(1, Math.floor((hasta.getTime() - desde.getTime()) / 86400000) + 1);
-    const granularity = spanDays > 45 ? "month" : "day";
 
-    const liquidaciones = await prisma.liquidacion.findMany({
+    const liquidacionesRaw = await prisma.liquidacion.findMany({
       where: {
-        OR: [
-          {
-            servicio: {
-              is: {
-                fechaServicio: { gte: desde, lte: hasta },
-              },
-            },
-          },
-          {
-            AND: [{ servicioId: null }, { createdAt: { gte: desde, lte: hasta } }],
-          },
-        ],
+        ...(conductorId ? { conductorId } : {}),
       },
       select: {
         id: true,
@@ -817,86 +812,164 @@ router.get("/liquidaciones", async (req, res, next) => {
         },
       },
     });
+    const liquidacionIds = liquidacionesRaw.map((item) => item.id).filter(Boolean);
+    const movimientos = await findMovimientosByLiquidacionIds(prisma, liquidacionIds, {
+      includeRelations: false,
+      orderDirection: "asc",
+    });
+    const groupedMovimientos = groupMovimientosByLiquidacion(movimientos);
+    const liquidacionesConEstado = liquidacionesRaw.map((liquidacion) =>
+      attachLiquidacionEstadoFinanciero(
+        {
+          ...liquidacion,
+          montoEntregado: toNum(liquidacion.montoEntregado),
+          totalGastos: toNum(liquidacion.totalGastos),
+          saldo: toNum(liquidacion.saldo),
+        },
+        groupedMovimientos.get(liquidacion.id) ?? [],
+      ),
+    );
+    const liquidaciones = liquidacionesConEstado.filter((item) =>
+      ["PENDIENTE_REGULARIZAR", "PARCIALMENTE_COMPENSADA"].includes(item.estadoRegularizacion),
+    );
+    const fechasOrdenadas = liquidaciones
+      .map((item) => resolveLiquidacionFecha(item))
+      .filter(Boolean)
+      .map((value) => new Date(value))
+      .sort((a, b) => a.getTime() - b.getTime());
+    const desde = fechasOrdenadas.length > 0 ? startOfDay(fechasOrdenadas[0]) : startOfDay(ahora);
+    const hasta = fechasOrdenadas.length > 0 ? endOfDay(fechasOrdenadas[fechasOrdenadas.length - 1]) : endOfDay(ahora);
+    const spanDays = Math.max(1, Math.floor((hasta.getTime() - desde.getTime()) / 86400000) + 1);
+    const granularity = spanDays > 45 ? "month" : "day";
 
     const kpis = {
       totalLiquidaciones: 0,
       montoEntregado: 0,
       totalGastos: 0,
+      saldoBaseNeto: 0,
       saldoNeto: 0,
+      liquidacionesConPendienteReal: 0,
+      pendientesRegularizar: 0,
+      parcialmenteCompensadas: 0,
+      compensadas: 0,
+      sinSaldo: 0,
       pendientes: 0,
+      sinRendicion: 0,
+      cuadradas: 0,
       favorEmpresa: 0,
       favorConductor: 0,
       montoFavorEmpresa: 0,
       montoFavorConductor: 0,
     };
 
-    const porEstadoMap = { PENDIENTE: 0, LIQUIDADA: 0 };
-    const topConductoresMap = new Map();
+    const porEstadoRendicionMap = {};
+    const porEstadoRegularizacionMap = {};
+    const porResultadoEconomicoMap = {};
+    const topConductoresBaseMap = new Map();
     const pendientesRaw = [];
     const serieMap = new Map(
       buildSerieKeys(desde, hasta, granularity).map((key) => [
         key,
-        { label: formatSerieLabel(key, granularity), montoEntregado: 0, totalGastos: 0, saldoNeto: 0 },
+        {
+          label: formatSerieLabel(key, granularity),
+          montoEntregado: 0,
+          totalGastos: 0,
+          saldoBaseNeto: 0,
+          saldoPendienteNeto: 0,
+        },
       ]),
     );
 
     for (const liquidacion of liquidaciones) {
       const montoEntregado = toNum(liquidacion.montoEntregado);
       const totalGastos = toNum(liquidacion.totalGastos);
-      const saldo = toNum(liquidacion.saldo);
+      const saldoBase = toNum(liquidacion.saldo);
+      const saldoPendiente = toNum(liquidacion.saldoPendiente);
       const fechaRef = resolveLiquidacionFecha(liquidacion);
       if (!fechaRef) continue;
 
       kpis.totalLiquidaciones += 1;
       kpis.montoEntregado += montoEntregado;
       kpis.totalGastos += totalGastos;
-      kpis.saldoNeto += saldo;
+      kpis.saldoBaseNeto += saldoBase;
+      kpis.saldoNeto += saldoPendiente;
 
+      if (Math.abs(saldoPendiente) > 0) {
+        kpis.liquidacionesConPendienteReal += 1;
+      }
+      if (saldoPendiente > 0) {
+        kpis.favorEmpresa += 1;
+        kpis.montoFavorEmpresa += saldoPendiente;
+      } else if (saldoPendiente < 0) {
+        kpis.favorConductor += 1;
+        kpis.montoFavorConductor += Math.abs(saldoPendiente);
+      }
+
+      switch (liquidacion.estadoRegularizacion) {
+        case "SIN_SALDO":
+          kpis.sinSaldo += 1;
+          break;
+        case "PENDIENTE_REGULARIZAR":
+          kpis.pendientesRegularizar += 1;
+          break;
+        case "PARCIALMENTE_COMPENSADA":
+          kpis.parcialmenteCompensadas += 1;
+          break;
+        case "COMPENSADA":
+          kpis.compensadas += 1;
+          break;
+        default:
+          break;
+      }
+
+      if (liquidacion.resultadoEconomico === "SIN_RENDICION") kpis.sinRendicion += 1;
+      if (liquidacion.resultadoEconomico === "CUADRADA") kpis.cuadradas += 1;
       if (liquidacion.status === "PENDIENTE") {
         kpis.pendientes += 1;
       }
-      if (saldo > 0) {
-        kpis.favorEmpresa += 1;
-        kpis.montoFavorEmpresa += saldo;
-      } else if (saldo < 0) {
-        kpis.favorConductor += 1;
-        kpis.montoFavorConductor += Math.abs(saldo);
-      }
 
-      porEstadoMap[liquidacion.status] = (porEstadoMap[liquidacion.status] ?? 0) + 1;
+      porEstadoRendicionMap[liquidacion.status] = (porEstadoRendicionMap[liquidacion.status] ?? 0) + 1;
+      porEstadoRegularizacionMap[liquidacion.estadoRegularizacion] =
+        (porEstadoRegularizacionMap[liquidacion.estadoRegularizacion] ?? 0) + 1;
+      porResultadoEconomicoMap[liquidacion.resultadoEconomico] =
+        (porResultadoEconomicoMap[liquidacion.resultadoEconomico] ?? 0) + 1;
 
       const conductorId = liquidacion.conductorId ?? liquidacion.conductor?.id ?? "SIN_CONDUCTOR";
       const conductorNombre = formatConductorNombre(liquidacion.conductor);
-      const currentConductor = topConductoresMap.get(conductorId) ?? {
+      const currentConductor = topConductoresBaseMap.get(conductorId) ?? {
         conductorId,
         conductorNombre,
         cantidadLiquidaciones: 0,
         montoEntregado: 0,
         totalGastos: 0,
-        saldoNeto: 0,
-        pendientes: 0,
+        saldoBaseNeto: 0,
+        saldoPendienteNeto: 0,
+        liquidacionesConPendienteReal: 0,
       };
 
       currentConductor.cantidadLiquidaciones += 1;
       currentConductor.montoEntregado += montoEntregado;
       currentConductor.totalGastos += totalGastos;
-      currentConductor.saldoNeto += saldo;
-      if (liquidacion.status === "PENDIENTE") currentConductor.pendientes += 1;
-      topConductoresMap.set(conductorId, currentConductor);
+      currentConductor.saldoBaseNeto += saldoBase;
+      currentConductor.saldoPendienteNeto += saldoPendiente;
+      if (Math.abs(saldoPendiente) > 0) currentConductor.liquidacionesConPendienteReal += 1;
+      topConductoresBaseMap.set(conductorId, currentConductor);
 
       const serieKey = granularity === "month" ? toIsoMonthKey(fechaRef) : toIsoDayKey(fechaRef);
       const serieItem = serieMap.get(serieKey) ?? {
         label: formatSerieLabel(serieKey, granularity),
         montoEntregado: 0,
         totalGastos: 0,
-        saldoNeto: 0,
+        saldoBaseNeto: 0,
+        saldoPendienteNeto: 0,
       };
       serieItem.montoEntregado += montoEntregado;
       serieItem.totalGastos += totalGastos;
-      serieItem.saldoNeto += saldo;
+      serieItem.saldoBaseNeto += saldoBase;
+      serieItem.saldoPendienteNeto += saldoPendiente;
       serieMap.set(serieKey, serieItem);
 
-      if (liquidacion.status === "PENDIENTE") {
+      if (Math.abs(saldoPendiente) > 0) {
         const fechaServicio = liquidacion.servicio?.fechaServicio ?? liquidacion.createdAt;
         const ruta = [liquidacion.servicio?.origen, liquidacion.servicio?.destino]
           .filter(Boolean)
@@ -914,21 +987,34 @@ router.get("/liquidaciones", async (req, res, next) => {
           ruta: ruta || "-",
           montoEntregado,
           totalGastos,
-          saldo,
+          saldo: saldoBase,
+          saldoPendiente,
+          estadoRegularizacion: liquidacion.estadoRegularizacion,
+          resultadoEconomico: liquidacion.resultadoEconomico,
           status: liquidacion.status,
           diasPendiente,
         });
       }
     }
 
-    const porEstadoBase = ["PENDIENTE", "LIQUIDADA"].map((estado) => ({
+    const porEstadoRendicion = ["PENDIENTE", "LIQUIDADA"].map((estado) => ({
       estado,
-      cantidad: porEstadoMap[estado] ?? 0,
+      cantidad: porEstadoRendicionMap[estado] ?? 0,
     }));
-    const porEstadoExtras = Object.entries(porEstadoMap)
-      .filter(([estado]) => !["PENDIENTE", "LIQUIDADA"].includes(estado))
-      .map(([estado, cantidad]) => ({ estado, cantidad }));
-    const porEstado = [...porEstadoBase, ...porEstadoExtras];
+    const porEstadoRegularizacion = ["PENDIENTE_REGULARIZAR", "PARCIALMENTE_COMPENSADA"].map((estado) => ({
+      estado,
+      cantidad: porEstadoRegularizacionMap[estado] ?? 0,
+    }));
+    const porResultadoEconomico = [
+      "SIN_RENDICION",
+      "CUADRADA",
+      "FAVOR_EMPRESA",
+      "FAVOR_CONDUCTOR",
+    ].map((resultado) => ({
+      resultado,
+      cantidad: porResultadoEconomicoMap[resultado] ?? 0,
+    }));
+    const porEstado = porEstadoRegularizacion;
 
     const serie = Array.from(serieMap.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -937,43 +1023,105 @@ router.get("/liquidaciones", async (req, res, next) => {
         label: value.label,
         montoEntregado: round2(value.montoEntregado),
         totalGastos: round2(value.totalGastos),
-        saldoNeto: round2(value.saldoNeto),
+        saldoBaseNeto: round2(value.saldoBaseNeto),
+        saldoPendienteNeto: round2(value.saldoPendienteNeto),
+        saldoNeto: round2(value.saldoPendienteNeto),
       }));
 
-    // Criterio de ranking: primero cantidad de liquidaciones y luego impacto de saldo.
-    const topConductores = Array.from(topConductoresMap.values())
-      .sort((a, b) => {
-        if (b.cantidadLiquidaciones !== a.cantidadLiquidaciones) {
-          return b.cantidadLiquidaciones - a.cantidadLiquidaciones;
-        }
-        const impactoSaldo = Math.abs(b.saldoNeto) - Math.abs(a.saldoNeto);
-        if (impactoSaldo !== 0) return impactoSaldo;
-        return b.montoEntregado - a.montoEntregado;
+    const conductorSummaryMap = new Map(
+      computeConductorSettlementSummary(liquidaciones).map((item) => [item.conductorId, item]),
+    );
+    const conductoresConsolidado = Array.from(topConductoresBaseMap.values())
+      .map((base) => {
+        const summary = conductorSummaryMap.get(base.conductorId) ?? {};
+        const deudaNetaPendiente = toNum(summary.deudaNetaPendiente ?? base.saldoPendienteNeto);
+        const pendientesRegularizar = Number(summary.pendientesRegularizar ?? 0);
+        const parcialmenteCompensadas = Number(summary.parcialmenteCompensadas ?? 0);
+        return {
+          ...base,
+          saldoNeto: base.saldoBaseNeto,
+          deudaNetaPendiente,
+          totalFavorEmpresaPendiente: toNum(summary.totalFavorEmpresaPendiente ?? 0),
+          totalFavorConductorPendiente: toNum(summary.totalFavorConductorPendiente ?? 0),
+          pendientesRegularizar,
+          parcialmenteCompensadas,
+          compensadas: Number(summary.compensadas ?? 0),
+          sinSaldo: Number(summary.sinSaldo ?? 0),
+          pendientes: pendientesRegularizar + parcialmenteCompensadas,
+        };
       })
-      .slice(0, 10)
+      .filter(
+        (item) =>
+          item.liquidacionesConPendienteReal > 0 &&
+          (Math.abs(item.totalFavorEmpresaPendiente) > 0 || Math.abs(item.totalFavorConductorPendiente) > 0),
+      )
       .map((item) => ({
         ...item,
         montoEntregado: round2(item.montoEntregado),
         totalGastos: round2(item.totalGastos),
-        saldoNeto: round2(item.saldoNeto),
+        saldoBaseNeto: round2(item.saldoBaseNeto),
+        saldoPendienteNeto: round2(item.saldoPendienteNeto),
+        saldoNeto: round2(item.saldoBaseNeto),
+        deudaNetaPendiente: round2(item.deudaNetaPendiente),
+        totalFavorEmpresaPendiente: round2(item.totalFavorEmpresaPendiente),
+        totalFavorConductorPendiente: round2(item.totalFavorConductorPendiente),
       }));
+
+    let topConductores = [];
+    if (conductorId) {
+      const selected = conductoresConsolidado.find((item) => item.conductorId === conductorId);
+      topConductores = selected ? [selected] : [];
+    } else if (topOrder === "EMPRESA_LE_DEBE_MAS") {
+      topConductores = [...conductoresConsolidado]
+        .sort((a, b) => {
+          if (b.totalFavorConductorPendiente !== a.totalFavorConductorPendiente) {
+            return b.totalFavorConductorPendiente - a.totalFavorConductorPendiente;
+          }
+          if (a.deudaNetaPendiente !== b.deudaNetaPendiente) {
+            return a.deudaNetaPendiente - b.deudaNetaPendiente;
+          }
+          return b.cantidadLiquidaciones - a.cantidadLiquidaciones;
+        })
+        .slice(0, 10);
+    } else {
+      topConductores = [...conductoresConsolidado]
+        .sort((a, b) => {
+          if (b.totalFavorEmpresaPendiente !== a.totalFavorEmpresaPendiente) {
+            return b.totalFavorEmpresaPendiente - a.totalFavorEmpresaPendiente;
+          }
+          if (b.deudaNetaPendiente !== a.deudaNetaPendiente) {
+            return b.deudaNetaPendiente - a.deudaNetaPendiente;
+          }
+          return b.cantidadLiquidaciones - a.cantidadLiquidaciones;
+        })
+        .slice(0, 10);
+    }
+    const selectedConductorSummary = conductorId
+      ? conductoresConsolidado.find((item) => item.conductorId === conductorId) ?? null
+      : null;
 
     const alertas = {
       pendientes: pendientesRaw
-        .sort((a, b) => new Date(a.fechaServicio).getTime() - new Date(b.fechaServicio).getTime())
+        .sort((a, b) => {
+          const byDate = new Date(a.fechaServicio).getTime() - new Date(b.fechaServicio).getTime();
+          if (byDate !== 0) return byDate;
+          return Math.abs(b.saldoPendiente) - Math.abs(a.saldoPendiente);
+        })
         .slice(0, 8)
         .map((item) => ({
           ...item,
           montoEntregado: round2(item.montoEntregado),
           totalGastos: round2(item.totalGastos),
           saldo: round2(item.saldo),
+          saldoPendiente: round2(item.saldoPendiente),
         })),
     };
 
     req.log.info("Dashboard liquidaciones consultado", {
       usuarioId: req.user.id,
-      rango,
-      cantidadLiquidaciones: kpis.totalLiquidaciones,
+      conductorId,
+      topOrder,
+      cantidadLiquidacionesAbiertas: kpis.totalLiquidaciones,
     });
 
     res.json({
@@ -982,21 +1130,42 @@ router.get("/liquidaciones", async (req, res, next) => {
         montoEntregado: round2(kpis.montoEntregado),
         totalGastos: round2(kpis.totalGastos),
         saldoNeto: round2(kpis.saldoNeto),
+        saldoBaseNeto: round2(kpis.saldoBaseNeto),
         pendientes: kpis.pendientes,
+        pendientesRegularizar: kpis.pendientesRegularizar,
+        parcialmenteCompensadas: kpis.parcialmenteCompensadas,
+        compensadas: kpis.compensadas,
+        sinSaldo: kpis.sinSaldo,
+        liquidacionesConPendienteReal: kpis.liquidacionesConPendienteReal,
+        sinRendicion: kpis.sinRendicion,
+        cuadradas: kpis.cuadradas,
         favorEmpresa: kpis.favorEmpresa,
         favorConductor: kpis.favorConductor,
         montoFavorEmpresa: round2(kpis.montoFavorEmpresa),
         montoFavorConductor: round2(kpis.montoFavorConductor),
+        totalFavorEmpresaPendiente: round2(kpis.montoFavorEmpresa),
+        totalFavorConductorPendiente: round2(kpis.montoFavorConductor),
       },
       porEstado,
+      porEstadoRendicion,
+      porEstadoRegularizacion,
+      porResultadoEconomico,
       serie,
       topConductores,
+      selectedConductorSummary,
       alertas,
       meta: {
-        rango,
+        conductorId,
+        topOrder,
         granularity,
         desde: desde.toISOString(),
         hasta: hasta.toISOString(),
+        scope: "solo liquidaciones pendientes de regularizacion",
+        saldoConvencion: {
+          positivo: "saldo > 0 => el conductor debe a la empresa",
+          negativo: "saldo < 0 => la empresa le debe al conductor",
+          cero: "saldo = 0 => liquidacion cuadrada",
+        },
         filtroFecha: "servicio.fechaServicio (fallback: liquidacion.createdAt sin servicio vinculado)",
         generadoEn: new Date().toISOString(),
       },

@@ -72,6 +72,7 @@ model Conductor {
   activo                     Boolean                   @default(true)
   servicios                  Servicio[]
   liquidaciones              Liquidacion[]
+  saldoMovimientos           LiquidacionSaldoMovimiento[]
 }
 
 model RutaTarifa {
@@ -208,24 +209,26 @@ model GuiaDocRelacionado {
 }
 
 model Liquidacion {
-  id             String                   @id @default(uuid())
-  servicioId     String?                  @unique
-  servicio       Servicio?                @relation(fields: [servicioId], references: [id])
-  conductorId    String
-  conductor      Conductor                @relation(fields: [conductorId], references: [id])
-  montoEntregado Decimal                  @default(0)
-  viaticos       Decimal                  @default(0)
-  peajes         Decimal                  @default(0)
-  combustible    Decimal                  @default(0)
-  galones        Decimal                  @default(0)
-  otros          Decimal                  @default(0)
-  totalGastos    Decimal                  @default(0)
-  saldo          Decimal                  @default(0)
-  detalleSaldo   String?
-  status         String                   @default("PENDIENTE")
-  observaciones  String?
-  createdAt      DateTime                 @default(now())
-  comprobantes   LiquidacionComprobante[]
+  id                    String                       @id @default(uuid())
+  servicioId            String?                      @unique
+  servicio              Servicio?                    @relation(fields: [servicioId], references: [id])
+  conductorId           String
+  conductor             Conductor                    @relation(fields: [conductorId], references: [id])
+  montoEntregado        Decimal                      @default(0)
+  viaticos              Decimal                      @default(0)
+  peajes                Decimal                      @default(0)
+  combustible           Decimal                      @default(0)
+  galones               Decimal                      @default(0)
+  otros                 Decimal                      @default(0)
+  totalGastos           Decimal                      @default(0)
+  saldo                 Decimal                      @default(0)
+  detalleSaldo          String?
+  status                String                       @default("PENDIENTE")
+  observaciones         String?
+  createdAt             DateTime                     @default(now())
+  comprobantes          LiquidacionComprobante[]
+  saldoMovimientosOrigen LiquidacionSaldoMovimiento[] @relation("LiquidacionSaldoOrigen")
+  saldoMovimientosDestino LiquidacionSaldoMovimiento[] @relation("LiquidacionSaldoDestino")
 }
 
 model LiquidacionComprobante {
@@ -238,6 +241,27 @@ model LiquidacionComprobante {
   monto         Decimal
   urlArchivo    String?
   createdAt     DateTime    @default(now())
+}
+
+model LiquidacionSaldoMovimiento {
+  id                  String      @id @default(uuid())
+  liquidacionOrigenId String
+  liquidacionOrigen   Liquidacion @relation("LiquidacionSaldoOrigen", fields: [liquidacionOrigenId], references: [id])
+  liquidacionDestinoId String?
+  liquidacionDestino  Liquidacion? @relation("LiquidacionSaldoDestino", fields: [liquidacionDestinoId], references: [id])
+  conductorId         String
+  conductor           Conductor   @relation(fields: [conductorId], references: [id])
+  tipo                String
+  monto               Decimal
+  fechaMovimiento     DateTime    @default(now())
+  observacion         String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@index([liquidacionOrigenId])
+  @@index([liquidacionDestinoId])
+  @@index([conductorId])
+  @@index([fechaMovimiento])
 }
 
 model OrdenServicio {

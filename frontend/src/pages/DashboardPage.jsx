@@ -50,7 +50,7 @@ export default function DashboardPage() {
             {/* Controles */}
             <div className="flex flex-wrap items-center gap-3">
               {/* Selector de rango (aplica a tabs temporales) */}
-              {(activeTab === "general" || activeTab === "liquidaciones") && (
+              {activeTab === "general" && (
                 <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm">
                   {RANGOS.map((r) => (
                     <button
@@ -114,7 +114,7 @@ export default function DashboardPage() {
         {activeTab === "general" && <DashboardGeneralTab rango={rango} refreshKey={refreshKey} />}
         {activeTab === "cobranza" && <DashboardCobranzaTab refreshKey={refreshKey} />}
         {activeTab === "liquidaciones" && (
-          <DashboardLiquidacionesTab rango={rango} refreshKey={refreshKey} />
+          <DashboardLiquidacionesTab refreshKey={refreshKey} />
         )}
       </div>
     </div>
