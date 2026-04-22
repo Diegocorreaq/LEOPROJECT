@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { LayoutDashboard, CreditCard, RefreshCw, TrendingUp } from "lucide-react";
+import { LayoutDashboard, CreditCard, RefreshCw, TrendingUp, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import DashboardGeneralTab from "./dashboard/DashboardGeneralTab";
 import DashboardCobranzaTab from "./dashboard/DashboardCobranzaTab";
+import DashboardLiquidacionesTab from "./dashboard/DashboardLiquidacionesTab";
 
 const TABS = [
   { id: "general", label: "General", icon: LayoutDashboard },
   { id: "cobranza", label: "Facturación & Cobranza", icon: CreditCard },
+  { id: "liquidaciones", label: "Liquidaciones", icon: Wallet },
 ];
 
 const RANGOS = [
@@ -41,16 +43,14 @@ export default function DashboardPage() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  Vista operativa del sistema
-                </p>
+                <p className="text-sm text-slate-500 mt-0.5">Vista operativa del sistema</p>
               </div>
             </div>
 
             {/* Controles */}
             <div className="flex flex-wrap items-center gap-3">
-              {/* Selector de rango (solo aplica al tab general) */}
-              {activeTab === "general" && (
+              {/* Selector de rango (aplica a tabs temporales) */}
+              {(activeTab === "general" || activeTab === "liquidaciones") && (
                 <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm">
                   {RANGOS.map((r) => (
                     <button
@@ -60,7 +60,7 @@ export default function DashboardPage() {
                         "rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200",
                         rango === r.value
                           ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-500 hover:text-slate-700"
+                          : "text-slate-500 hover:text-slate-700",
                       )}
                     >
                       {r.label}
@@ -74,7 +74,7 @@ export default function DashboardPage() {
                 title="Refrescar datos"
                 className={cn(
                   "flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all shadow-sm hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 disabled:opacity-50",
-                  isRefreshing && "cursor-wait"
+                  isRefreshing && "cursor-wait",
                 )}
               >
                 <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
@@ -87,32 +87,34 @@ export default function DashboardPage() {
         {/* Tabs */}
         <div className="px-4 pb-0 sm:px-6 lg:px-8">
           <div className="flex items-center gap-1 overflow-x-auto pb-px -mx-4 px-4 sm:mx-0 sm:px-0">
-            {TABS.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                className={cn(
-                  "flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-all duration-200",
-                  activeTab === id
-                    ? "border-amber-500 text-amber-600"
-                    : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </button>
-            ))}
+            {TABS.map(({ id, label, icon }) => {
+              const TabIcon = icon;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-all duration-200",
+                    activeTab === id
+                      ? "border-amber-500 text-amber-600"
+                      : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300",
+                  )}
+                >
+                  <TabIcon className="h-4 w-4" />
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
       {/* Tab content */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {activeTab === "general" && (
-          <DashboardGeneralTab rango={rango} refreshKey={refreshKey} />
-        )}
-        {activeTab === "cobranza" && (
-          <DashboardCobranzaTab refreshKey={refreshKey} />
+        {activeTab === "general" && <DashboardGeneralTab rango={rango} refreshKey={refreshKey} />}
+        {activeTab === "cobranza" && <DashboardCobranzaTab refreshKey={refreshKey} />}
+        {activeTab === "liquidaciones" && (
+          <DashboardLiquidacionesTab rango={rango} refreshKey={refreshKey} />
         )}
       </div>
     </div>

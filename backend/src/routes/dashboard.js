@@ -4,6 +4,7 @@
  * Rutas:
  *  GET /api/dashboard/general    KPIs, flujo documental, alertas, actividad reciente
  *  GET /api/dashboard/cobranza   KPIs cobranza, serie mensual, aging, top clientes, facturas críticas
+ *  GET /api/dashboard/liquidaciones  KPIs y analitica ejecutiva de liquidaciones por rango
  *
  * Seguridad: authMiddleware + requireOperaciones en todo el router.
  */
@@ -80,6 +81,60 @@ function resolveGeneralRange(rango, desde, hasta) {
   }
 
   return { desde: desdeDate, hasta: hastaDate };
+}
+
+function formatConductorNombre(conductor) {
+  if (!conductor) return "Sin conductor";
+  const nombre = [conductor.nombre, conductor.apPaterno, conductor.apMaterno]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return nombre || "Sin conductor";
+}
+
+function resolveLiquidacionFecha(liquidacion) {
+  return liquidacion?.servicio?.fechaServicio ?? liquidacion?.createdAt ?? null;
+}
+
+function toIsoDayKey(dateValue) {
+  return new Date(dateValue).toISOString().slice(0, 10);
+}
+
+function toIsoMonthKey(dateValue) {
+  return new Date(dateValue).toISOString().slice(0, 7);
+}
+
+function buildSerieKeys(desde, hasta, granularity) {
+  const keys = [];
+  const cursor = new Date(desde);
+
+  if (granularity === "month") {
+    const monthCursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const monthEnd = new Date(hasta.getFullYear(), hasta.getMonth(), 1);
+    while (monthCursor <= monthEnd) {
+      keys.push(toIsoMonthKey(monthCursor));
+      monthCursor.setMonth(monthCursor.getMonth() + 1);
+    }
+    return keys;
+  }
+
+  while (cursor <= hasta) {
+    keys.push(toIsoDayKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return keys;
+}
+
+function formatSerieLabel(key, granularity) {
+  if (granularity === "month") {
+    const [year, month] = key.split("-").map(Number);
+    const date = new Date(year, month - 1, 1);
+    return date.toLocaleDateString("es-PE", { month: "short", year: "2-digit" });
+  }
+
+  const [year, month, day] = key.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
 }
 
 const ESTADO_ANULADA = "ANULADA";
@@ -695,6 +750,256 @@ router.get("/cobranza", async (req, res, next) => {
       topClientesDeuda,
       facturasCriticas,
       meta: { generadoEn: new Date().toISOString() },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const liquidacionesDashboardQuerySchema = z
+  .object({
+    rango: z.enum(["today", "7d", "30d", "month"]).optional(),
+    desde: isoDateQueryField("desde"),
+    hasta: isoDateQueryField("hasta"),
+  })
+  .strict();
+
+router.get("/liquidaciones", async (req, res, next) => {
+  try {
+    const query = validate(liquidacionesDashboardQuerySchema, req.query, res, "query");
+    if (!query) return;
+
+    const rango = query.rango ?? "30d";
+    const { desde, hasta } = resolveGeneralRange(rango, query.desde, query.hasta);
+    const ahora = new Date();
+    const spanDays = Math.max(1, Math.floor((hasta.getTime() - desde.getTime()) / 86400000) + 1);
+    const granularity = spanDays > 45 ? "month" : "day";
+
+    const liquidaciones = await prisma.liquidacion.findMany({
+      where: {
+        OR: [
+          {
+            servicio: {
+              is: {
+                fechaServicio: { gte: desde, lte: hasta },
+              },
+            },
+          },
+          {
+            AND: [{ servicioId: null }, { createdAt: { gte: desde, lte: hasta } }],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        servicioId: true,
+        conductorId: true,
+        status: true,
+        montoEntregado: true,
+        totalGastos: true,
+        saldo: true,
+        createdAt: true,
+        conductor: {
+          select: {
+            id: true,
+            nombre: true,
+            apPaterno: true,
+            apMaterno: true,
+          },
+        },
+        servicio: {
+          select: {
+            id: true,
+            fechaServicio: true,
+            origen: true,
+            destino: true,
+          },
+        },
+      },
+    });
+
+    const kpis = {
+      totalLiquidaciones: 0,
+      montoEntregado: 0,
+      totalGastos: 0,
+      saldoNeto: 0,
+      pendientes: 0,
+      favorEmpresa: 0,
+      favorConductor: 0,
+      montoFavorEmpresa: 0,
+      montoFavorConductor: 0,
+    };
+
+    const porEstadoMap = { PENDIENTE: 0, LIQUIDADA: 0 };
+    const topConductoresMap = new Map();
+    const pendientesRaw = [];
+    const serieMap = new Map(
+      buildSerieKeys(desde, hasta, granularity).map((key) => [
+        key,
+        { label: formatSerieLabel(key, granularity), montoEntregado: 0, totalGastos: 0, saldoNeto: 0 },
+      ]),
+    );
+
+    for (const liquidacion of liquidaciones) {
+      const montoEntregado = toNum(liquidacion.montoEntregado);
+      const totalGastos = toNum(liquidacion.totalGastos);
+      const saldo = toNum(liquidacion.saldo);
+      const fechaRef = resolveLiquidacionFecha(liquidacion);
+      if (!fechaRef) continue;
+
+      kpis.totalLiquidaciones += 1;
+      kpis.montoEntregado += montoEntregado;
+      kpis.totalGastos += totalGastos;
+      kpis.saldoNeto += saldo;
+
+      if (liquidacion.status === "PENDIENTE") {
+        kpis.pendientes += 1;
+      }
+      if (saldo > 0) {
+        kpis.favorEmpresa += 1;
+        kpis.montoFavorEmpresa += saldo;
+      } else if (saldo < 0) {
+        kpis.favorConductor += 1;
+        kpis.montoFavorConductor += Math.abs(saldo);
+      }
+
+      porEstadoMap[liquidacion.status] = (porEstadoMap[liquidacion.status] ?? 0) + 1;
+
+      const conductorId = liquidacion.conductorId ?? liquidacion.conductor?.id ?? "SIN_CONDUCTOR";
+      const conductorNombre = formatConductorNombre(liquidacion.conductor);
+      const currentConductor = topConductoresMap.get(conductorId) ?? {
+        conductorId,
+        conductorNombre,
+        cantidadLiquidaciones: 0,
+        montoEntregado: 0,
+        totalGastos: 0,
+        saldoNeto: 0,
+        pendientes: 0,
+      };
+
+      currentConductor.cantidadLiquidaciones += 1;
+      currentConductor.montoEntregado += montoEntregado;
+      currentConductor.totalGastos += totalGastos;
+      currentConductor.saldoNeto += saldo;
+      if (liquidacion.status === "PENDIENTE") currentConductor.pendientes += 1;
+      topConductoresMap.set(conductorId, currentConductor);
+
+      const serieKey = granularity === "month" ? toIsoMonthKey(fechaRef) : toIsoDayKey(fechaRef);
+      const serieItem = serieMap.get(serieKey) ?? {
+        label: formatSerieLabel(serieKey, granularity),
+        montoEntregado: 0,
+        totalGastos: 0,
+        saldoNeto: 0,
+      };
+      serieItem.montoEntregado += montoEntregado;
+      serieItem.totalGastos += totalGastos;
+      serieItem.saldoNeto += saldo;
+      serieMap.set(serieKey, serieItem);
+
+      if (liquidacion.status === "PENDIENTE") {
+        const fechaServicio = liquidacion.servicio?.fechaServicio ?? liquidacion.createdAt;
+        const ruta = [liquidacion.servicio?.origen, liquidacion.servicio?.destino]
+          .filter(Boolean)
+          .join(" -> ");
+        const diasPendiente = Math.max(
+          0,
+          Math.floor((startOfDay(ahora).getTime() - startOfDay(new Date(fechaServicio)).getTime()) / 86400000),
+        );
+
+        pendientesRaw.push({
+          id: liquidacion.id,
+          servicioId: liquidacion.servicioId,
+          fechaServicio,
+          conductorNombre,
+          ruta: ruta || "-",
+          montoEntregado,
+          totalGastos,
+          saldo,
+          status: liquidacion.status,
+          diasPendiente,
+        });
+      }
+    }
+
+    const porEstadoBase = ["PENDIENTE", "LIQUIDADA"].map((estado) => ({
+      estado,
+      cantidad: porEstadoMap[estado] ?? 0,
+    }));
+    const porEstadoExtras = Object.entries(porEstadoMap)
+      .filter(([estado]) => !["PENDIENTE", "LIQUIDADA"].includes(estado))
+      .map(([estado, cantidad]) => ({ estado, cantidad }));
+    const porEstado = [...porEstadoBase, ...porEstadoExtras];
+
+    const serie = Array.from(serieMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, value]) => ({
+        key,
+        label: value.label,
+        montoEntregado: round2(value.montoEntregado),
+        totalGastos: round2(value.totalGastos),
+        saldoNeto: round2(value.saldoNeto),
+      }));
+
+    // Criterio de ranking: primero cantidad de liquidaciones y luego impacto de saldo.
+    const topConductores = Array.from(topConductoresMap.values())
+      .sort((a, b) => {
+        if (b.cantidadLiquidaciones !== a.cantidadLiquidaciones) {
+          return b.cantidadLiquidaciones - a.cantidadLiquidaciones;
+        }
+        const impactoSaldo = Math.abs(b.saldoNeto) - Math.abs(a.saldoNeto);
+        if (impactoSaldo !== 0) return impactoSaldo;
+        return b.montoEntregado - a.montoEntregado;
+      })
+      .slice(0, 10)
+      .map((item) => ({
+        ...item,
+        montoEntregado: round2(item.montoEntregado),
+        totalGastos: round2(item.totalGastos),
+        saldoNeto: round2(item.saldoNeto),
+      }));
+
+    const alertas = {
+      pendientes: pendientesRaw
+        .sort((a, b) => new Date(a.fechaServicio).getTime() - new Date(b.fechaServicio).getTime())
+        .slice(0, 8)
+        .map((item) => ({
+          ...item,
+          montoEntregado: round2(item.montoEntregado),
+          totalGastos: round2(item.totalGastos),
+          saldo: round2(item.saldo),
+        })),
+    };
+
+    req.log.info("Dashboard liquidaciones consultado", {
+      usuarioId: req.user.id,
+      rango,
+      cantidadLiquidaciones: kpis.totalLiquidaciones,
+    });
+
+    res.json({
+      kpis: {
+        totalLiquidaciones: kpis.totalLiquidaciones,
+        montoEntregado: round2(kpis.montoEntregado),
+        totalGastos: round2(kpis.totalGastos),
+        saldoNeto: round2(kpis.saldoNeto),
+        pendientes: kpis.pendientes,
+        favorEmpresa: kpis.favorEmpresa,
+        favorConductor: kpis.favorConductor,
+        montoFavorEmpresa: round2(kpis.montoFavorEmpresa),
+        montoFavorConductor: round2(kpis.montoFavorConductor),
+      },
+      porEstado,
+      serie,
+      topConductores,
+      alertas,
+      meta: {
+        rango,
+        granularity,
+        desde: desde.toISOString(),
+        hasta: hasta.toISOString(),
+        filtroFecha: "servicio.fechaServicio (fallback: liquidacion.createdAt sin servicio vinculado)",
+        generadoEn: new Date().toISOString(),
+      },
     });
   } catch (err) {
     next(err);
