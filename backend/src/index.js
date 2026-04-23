@@ -104,6 +104,7 @@ app.use("/api/guias", require("./routes/guias"));
 app.use("/api/liquidaciones", require("./routes/liquidaciones"));
 app.use("/api/facturas", require("./routes/facturas"));
 app.use("/api/dashboard", require("./routes/dashboard"));
+app.use("/api/flota", require("./routes/flota"));
 
 if (isServingFrontend) {
   app.use(express.static(frontendDistPath));

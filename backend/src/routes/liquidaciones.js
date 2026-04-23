@@ -16,6 +16,7 @@ const {
   patchLiquidacionStatusSchema,
   updateLiquidacionSchema,
 } = require("../validators/liquidaciones.schema");
+const { COMPONENTES_KM } = require("../validators/flota.schema");
 const { computeLiquidacion } = require("../modules/liquidaciones/computeLiquidacion");
 const { getLiquidacionEstadoFinanciero, groupMovimientosByLiquidacion } = require("../modules/liquidaciones/settlement");
 const {
@@ -127,6 +128,8 @@ function serializeLiquidacion(liquidacion, movimientos = []) {
     peajes: toNumber(liquidacion.peajes),
     combustible: toNumber(liquidacion.combustible),
     galones: toNumber(liquidacion.galones),
+    kmInicial: liquidacion.kmInicial != null ? toNumber(liquidacion.kmInicial) : null,
+    kmFinal: liquidacion.kmFinal != null ? toNumber(liquidacion.kmFinal) : null,
     otros: toNumber(liquidacion.otros),
     totalGastos: toNumber(liquidacion.totalGastos),
     saldo: toNumber(liquidacion.saldo),
@@ -229,6 +232,8 @@ function buildLiquidacionData(body, servicio) {
     peajes: computed.peajes,
     combustible: computed.combustible,
     galones: computed.galones,
+    kmInicial: body.kmInicial ?? null,
+    kmFinal: body.kmFinal ?? null,
     otros: computed.otros,
     totalGastos: computed.totalGastos,
     saldo: computed.saldo,
@@ -236,6 +241,30 @@ function buildLiquidacionData(body, servicio) {
     status: computed.status,
     observaciones: body.observaciones ?? null,
   };
+}
+
+function calcularKmRecorridos(kmInicial, kmFinal) {
+  const ini = kmInicial != null ? Number(kmInicial) : null;
+  const fin = kmFinal != null ? Number(kmFinal) : null;
+  if (ini === null || fin === null) return 0;
+  return Math.max(0, fin - ini);
+}
+
+async function acumularKmVehiculo(tx, vehiculoId, deltaKm) {
+  if (deltaKm === 0) return;
+  for (const componente of COMPONENTES_KM) {
+    const current = await tx.mantenimientoKm.findUnique({
+      where: { vehiculoId_componente: { vehiculoId, componente } },
+      select: { kmAcumulado: true },
+    });
+    const kmActual = Number(current?.kmAcumulado ?? 0);
+    const nuevoKm = Math.max(0, kmActual + deltaKm);
+    await tx.mantenimientoKm.upsert({
+      where: { vehiculoId_componente: { vehiculoId, componente } },
+      create: { vehiculoId, componente, kmAcumulado: nuevoKm, kmPermitido: 0, rendimientoEstandar: 0 },
+      update: { kmAcumulado: nuevoKm },
+    });
+  }
 }
 
 async function getLiquidacionDetalle(db, liquidacionId) {
@@ -669,6 +698,11 @@ router.post("/", async (req, res, next) => {
         data: buildLiquidacionData(body, servicio),
       });
 
+      if (servicio.vehiculo?.tipo === "PROPIO") {
+        const kmRecorridos = calcularKmRecorridos(body.kmInicial, body.kmFinal);
+        await acumularKmVehiculo(tx, servicio.vehiculoId, kmRecorridos);
+      }
+
       return getLiquidacionDetalle(tx, created.id);
     });
 
@@ -705,7 +739,7 @@ router.put("/:id", async (req, res, next) => {
     const updatedLiquidacion = await prisma.$transaction(async (tx) => {
       const existing = await tx.liquidacion.findUnique({
         where: { id: validated.params.id },
-        include: { servicio: true },
+        include: { servicio: { include: { vehiculo: true } } },
       });
 
       if (!existing) {
@@ -731,6 +765,30 @@ router.put("/:id", async (req, res, next) => {
         where: { id: existing.id },
         data: buildLiquidacionData(body, servicio),
       });
+
+      // Acumulación de km: calcular delta respecto a los valores anteriores
+      const oldVehiculoId = existing.servicio?.vehiculoId ?? null;
+      const oldVehiculoTipo = existing.servicio?.vehiculo?.tipo ?? null;
+      const newVehiculoId = servicio.vehiculoId;
+      const newVehiculoTipo = servicio.vehiculo?.tipo ?? null;
+      const servicioReasignado = existing.servicioId !== body.servicioId;
+
+      if (servicioReasignado) {
+        // Revertir km del vehículo anterior y aplicar km al nuevo
+        if (oldVehiculoId && oldVehiculoTipo === "PROPIO") {
+          const oldKm = calcularKmRecorridos(existing.kmInicial, existing.kmFinal);
+          await acumularKmVehiculo(tx, oldVehiculoId, -oldKm);
+        }
+        if (newVehiculoTipo === "PROPIO") {
+          const newKm = calcularKmRecorridos(body.kmInicial, body.kmFinal);
+          await acumularKmVehiculo(tx, newVehiculoId, newKm);
+        }
+      } else if (newVehiculoTipo === "PROPIO") {
+        const oldKm = calcularKmRecorridos(existing.kmInicial, existing.kmFinal);
+        const newKm = calcularKmRecorridos(body.kmInicial, body.kmFinal);
+        const deltaKm = newKm - oldKm;
+        await acumularKmVehiculo(tx, newVehiculoId, deltaKm);
+      }
 
       return getLiquidacionDetalle(tx, existing.id);
     });

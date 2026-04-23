@@ -14,29 +14,56 @@ const quantitySchema = z.preprocess(
 
 const optionalStringSchema = z.string().trim().max(2000).optional().nullable();
 
-const createLiquidacionSchema = z.object({
-  servicioId: z.string({ required_error: "servicioId es requerido" }).uuid("servicioId debe ser un UUID valido"),
-  montoEntregado: moneySchema,
-  viaticos: moneySchema,
-  peajes: moneySchema,
-  combustible: moneySchema,
-  galones: quantitySchema,
-  otros: moneySchema,
-  status: z.enum(LIQUIDACION_STATUS).default("PENDIENTE"),
-  observaciones: optionalStringSchema,
-}).strict();
+const kmOdometroSchema = z.preprocess(
+  (value) => (value === "" || value == null ? null : value),
+  z.coerce.number({ invalid_type_error: "El valor debe ser numerico" }).nonnegative("El km no puede ser negativo").nullable().optional(),
+);
 
-const updateLiquidacionSchema = z.object({
-  servicioId: z.string({ required_error: "servicioId es requerido" }).uuid("servicioId debe ser un UUID valido"),
-  montoEntregado: moneySchema,
-  viaticos: moneySchema,
-  peajes: moneySchema,
-  combustible: moneySchema,
-  galones: quantitySchema,
-  otros: moneySchema,
-  status: z.enum(LIQUIDACION_STATUS),
-  observaciones: optionalStringSchema,
-}).strict();
+function refinirKm(schema) {
+  return schema.superRefine((data, ctx) => {
+    const ini = data.kmInicial ?? null;
+    const fin = data.kmFinal ?? null;
+    if (ini !== null && fin !== null && fin < ini) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "El km final debe ser mayor o igual al km inicial.",
+        path: ["kmFinal"],
+      });
+    }
+  });
+}
+
+const createLiquidacionSchema = refinirKm(
+  z.object({
+    servicioId: z.string({ required_error: "servicioId es requerido" }).uuid("servicioId debe ser un UUID valido"),
+    montoEntregado: moneySchema,
+    viaticos: moneySchema,
+    peajes: moneySchema,
+    combustible: moneySchema,
+    galones: quantitySchema,
+    kmInicial: kmOdometroSchema,
+    kmFinal: kmOdometroSchema,
+    otros: moneySchema,
+    status: z.enum(LIQUIDACION_STATUS).default("PENDIENTE"),
+    observaciones: optionalStringSchema,
+  }).strict(),
+);
+
+const updateLiquidacionSchema = refinirKm(
+  z.object({
+    servicioId: z.string({ required_error: "servicioId es requerido" }).uuid("servicioId debe ser un UUID valido"),
+    montoEntregado: moneySchema,
+    viaticos: moneySchema,
+    peajes: moneySchema,
+    combustible: moneySchema,
+    galones: quantitySchema,
+    kmInicial: kmOdometroSchema,
+    kmFinal: kmOdometroSchema,
+    otros: moneySchema,
+    status: z.enum(LIQUIDACION_STATUS),
+    observaciones: optionalStringSchema,
+  }).strict(),
+);
 
 const patchLiquidacionStatusSchema = z.object({
   status: z.enum(LIQUIDACION_STATUS, {

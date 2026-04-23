@@ -219,6 +219,8 @@ model Liquidacion {
   peajes                Decimal                      @default(0)
   combustible           Decimal                      @default(0)
   galones               Decimal                      @default(0)
+  kmInicial             Decimal?
+  kmFinal               Decimal?
   otros                 Decimal                      @default(0)
   totalGastos           Decimal                      @default(0)
   saldo                 Decimal                      @default(0)

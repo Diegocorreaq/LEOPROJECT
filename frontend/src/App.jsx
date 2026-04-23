@@ -22,6 +22,8 @@ import EditarServicioPage from "@/pages/servicios/EditarServicioPage";
 import GuiasPage from "@/pages/guias/GuiasPage";
 import LiquidacionesPage from "@/pages/liquidaciones/LiquidacionesPage";
 import FacturacionPage from "@/pages/facturas/FacturacionPage";
+import FlotaPage from "@/pages/flota/FlotaPage";
+import FlotaVehiculoDetalle from "@/pages/flota/FlotaVehiculoDetalle";
 
 const Placeholder = ({ title }) => (
   <div className="p-8">
@@ -67,6 +69,8 @@ export default function App() {
             <Route path="guias" element={<GuiasPage />} />
             <Route path="liquidaciones" element={<LiquidacionesPage />} />
             <Route path="facturacion" element={<FacturacionPage />} />
+            <Route path="flota" element={<FlotaPage />} />
+            <Route path="flota/:id" element={<FlotaVehiculoDetalle />} />
             <Route path="rutas" element={<Placeholder title="Rutas & Tarifas" />} />
             <Route path="compras" element={<Placeholder title="Libro de Compras" />} />
           </Route>

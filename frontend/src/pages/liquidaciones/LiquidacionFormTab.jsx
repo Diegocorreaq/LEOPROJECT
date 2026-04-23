@@ -20,6 +20,8 @@ const EMPTY_FORM = {
   peajes: "",
   combustible: "",
   galones: "",
+  kmInicial: "",
+  kmFinal: "",
   otros: "",
   status: "PENDIENTE",
   observaciones: "",
@@ -129,6 +131,8 @@ export default function LiquidacionFormTab({
             peajes: liquidacion.peajes ?? "",
             combustible: liquidacion.combustible ?? "",
             galones: liquidacion.galones ?? "",
+            kmInicial: liquidacion.kmInicial ?? "",
+            kmFinal: liquidacion.kmFinal ?? "",
             otros: liquidacion.otros ?? "",
             status: LIQUIDACION_STATUS.includes(liquidacion.status) ? liquidacion.status : "PENDIENTE",
             observaciones: liquidacion.observaciones ?? "",
@@ -208,6 +212,8 @@ export default function LiquidacionFormTab({
       peajes: form.peajes === "" ? 0 : Number(form.peajes || 0),
       combustible: form.combustible === "" ? 0 : Number(form.combustible || 0),
       galones: form.galones === "" ? 0 : Number(form.galones || 0),
+      kmInicial: form.kmInicial === "" ? null : Number(form.kmInicial),
+      kmFinal: form.kmFinal === "" ? null : Number(form.kmFinal),
       otros: form.otros === "" ? 0 : Number(form.otros || 0),
       status: form.status,
       observaciones: form.observaciones?.trim() || null,
@@ -316,6 +322,33 @@ export default function LiquidacionFormTab({
               onChange={handleFieldChange}
               disabled={saving}
             />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <QuantityField
+              label="Km inicial (odómetro)"
+              name="kmInicial"
+              value={form.kmInicial}
+              onChange={handleFieldChange}
+              disabled={saving}
+            />
+            <QuantityField
+              label="Km final (odómetro)"
+              name="kmFinal"
+              value={form.kmFinal}
+              onChange={handleFieldChange}
+              disabled={saving}
+            />
+            <div className="flex flex-col justify-end">
+              <div className="rounded-xl bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Km recorridos</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">
+                  {form.kmInicial !== "" && form.kmFinal !== "" && Number(form.kmFinal) >= Number(form.kmInicial)
+                    ? `${(Number(form.kmFinal) - Number(form.kmInicial)).toLocaleString()} km`
+                    : "—"}
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
