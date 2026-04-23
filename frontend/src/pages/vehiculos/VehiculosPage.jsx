@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, Pencil, Plus, Search, Slash } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, Pencil, Plus, Search, Slash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
 import { Input } from "@/components/ui/input";
@@ -11,9 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import ListSummary from "@/components/ui/ListSummary";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
-import ListSummary from "@/components/ui/ListSummary";
 
 const TIPO_OPTIONS = [
   { value: "ALL", label: "Todos" },
@@ -27,56 +27,96 @@ const ESTADO_OPTIONS = [
   { value: "INACTIVO", label: "Inactivos" },
 ];
 
+const LIMIT_OPTIONS = [25, 50, 100];
+
+function getVisiblePages(page, totalPages) {
+  const size = Math.min(5, totalPages);
+  return Array.from({ length: size }, (_, i) => {
+    if (totalPages <= 5) return i + 1;
+    if (page <= 3) return i + 1;
+    if (page >= totalPages - 2) return totalPages - 4 + i;
+    return page - 2 + i;
+  });
+}
+
 export default function VehiculosPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.rol === "ADMIN";
+
   const [vehiculos, setVehiculos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [tipo, setTipo] = useState("ALL");
   const [estado, setEstado] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [savingId, setSavingId] = useState("");
   const [vehiculoToToggle, setVehiculoToToggle] = useState(null);
   const [statusError, setStatusError] = useState("");
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 250);
+
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [tipo, estado, limit]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError("");
 
-    const timeout = setTimeout(() => {
-      const params = new URLSearchParams();
-      if (search.trim()) params.set("texto", search.trim());
-      if (tipo !== "ALL") params.set("tipo", tipo);
-      if (estado !== "ALL") params.set("estado", estado);
-      const query = params.toString();
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("limit", String(limit));
+    if (search) params.set("texto", search);
+    if (tipo !== "ALL") params.set("tipo", tipo);
+    if (estado !== "ALL") params.set("estado", estado);
 
-      api.get(`/vehiculos${query ? `?${query}` : ""}`)
-        .then((data) => {
-          if (active) setVehiculos(data);
-        })
-        .catch((err) => {
-          if (active) setError(err.message || "No se pudieron cargar los vehiculos.");
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
-    }, 250);
+    api.getList(`/vehiculos?${params.toString()}`)
+      .then(({ items, total: totalCount }) => {
+        if (!active) return;
+        setVehiculos(items);
+        setTotal(totalCount);
+
+        if (page > 1 && items.length === 0 && totalCount > 0) {
+          setPage((current) => Math.max(1, current - 1));
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        setVehiculos([]);
+        setTotal(0);
+        setError(err.message || "No se pudieron cargar los vehiculos.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
     return () => {
       active = false;
-      clearTimeout(timeout);
     };
-  }, [search, tipo, estado]);
+  }, [search, tipo, estado, page, limit, refreshTick]);
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   const stats = useMemo(() => ({
-    total: vehiculos.length,
-    activos: vehiculos.filter((vehiculo) => vehiculo.estado === "ACTIVO").length,
-    terceros: vehiculos.filter((vehiculo) => vehiculo.tipo === "SUBCONTRATADO").length,
-  }), [vehiculos]);
+    total,
+    mostrados: vehiculos.length,
+    pagina: `${page}/${totalPages}`,
+  }), [page, total, totalPages, vehiculos.length]);
 
   function handleToggleStatusClick(vehiculo) {
     setVehiculoToToggle(vehiculo);
@@ -103,10 +143,10 @@ export default function VehiculosPage() {
     setStatusError("");
 
     try {
-      const response = await api.put(`/vehiculos/${vehiculoToToggle.id}`, { estado: nextEstado });
-      setVehiculos((current) => current.map((item) => item.id === vehiculoToToggle.id ? response : item));
+      await api.put(`/vehiculos/${vehiculoToToggle.id}`, { estado: nextEstado });
       setFeedback(successMessage);
       setVehiculoToToggle(null);
+      setRefreshTick((current) => current + 1);
     } catch (err) {
       setStatusError(err.message || "No se pudo actualizar el estado del vehiculo.");
     } finally {
@@ -115,6 +155,7 @@ export default function VehiculosPage() {
   }
 
   const statusAction = vehiculoToToggle?.estado === "ACTIVO" ? "desactivar" : "activar";
+  const visiblePages = getVisiblePages(page, totalPages);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
@@ -130,32 +171,49 @@ export default function VehiculosPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 border-b bg-slate-50 px-8 py-4 md:grid-cols-3">
-        <StatCard label="Total" value={stats.total} />
-        <StatCard label="Activos" value={stats.activos} />
-        <StatCard label="Subcontratados" value={stats.terceros} />
+        <StatCard label="Total filtrados" value={stats.total} />
+        <StatCard label="Mostrados" value={stats.mostrados} />
+        <StatCard label="Pagina" value={stats.pagina} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-b px-8 py-3">
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por placa, carreta, MTC o empresa" className="pl-9" />
+          <Input
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Buscar por placa, carreta, MTC o empresa"
+            className="pl-9"
+          />
         </div>
+
         <Select value={tipo} onValueChange={setTipo}>
           <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
           <SelectContent>
             {TIPO_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
           </SelectContent>
         </Select>
+
         <Select value={estado} onValueChange={setEstado}>
           <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
           <SelectContent>
             {ESTADO_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
           </SelectContent>
         </Select>
+
+        <Select value={String(limit)} onValueChange={(value) => setLimit(Number(value))}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Por pagina" /></SelectTrigger>
+          <SelectContent>
+            {LIMIT_OPTIONS.map((option) => <SelectItem key={option} value={String(option)}>{option} por pagina</SelectItem>)}
+          </SelectContent>
+        </Select>
+
         <ListSummary
-          total={vehiculos.length}
-          noun="vehículo"
-          nounPlural="vehículos"
+          total={total}
+          page={page}
+          pageSize={limit}
+          noun="vehiculo"
+          nounPlural="vehiculos"
           className="ml-auto"
         />
       </div>
@@ -227,6 +285,46 @@ export default function VehiculosPage() {
           </div>
         )}
       </div>
+
+      {!loading && total > 0 && (
+        <div className="flex items-center justify-between border-t bg-white px-8 py-3">
+          <span className="text-xs text-slate-400">Pag. {page} de {totalPages}</span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page <= 1}
+              className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-slate-500 disabled:opacity-40 hover:bg-slate-50"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            {visiblePages.map((targetPage) => (
+              <button
+                key={targetPage}
+                type="button"
+                onClick={() => setPage(targetPage)}
+                className={`flex h-7 w-7 items-center justify-center rounded border text-xs font-medium ${
+                  targetPage === page
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {targetPage}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={page >= totalPages}
+              className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-slate-500 disabled:opacity-40 hover:bg-slate-50"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {isAdmin ? (
         <ConfirmModal

@@ -1,0 +1,10 @@
+{
+  "name": "grupo-leo-dev",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:full": "node scripts/dev-full.js"
+  }
+}

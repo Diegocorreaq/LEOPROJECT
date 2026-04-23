@@ -31,7 +31,7 @@ Parte desde [`backend/.env.example`](./backend/.env.example).
 
 Variables principales:
 
-- `PORT=3000`
+- `PORT=3001`
 - `NODE_ENV=development`
 - `DATABASE_URL=...`
 - `JWT_SECRET=...`
@@ -97,11 +97,17 @@ copy .env.example .env
 npm run dev
 ```
 
+Comando unico (desde la raiz, con dependencias ya instaladas en `backend/` y `frontend/`):
+
+```powershell
+npm run dev:full
+```
+
 En este modo:
 
 - Vite corre en `http://localhost:5173`
-- Express corre en `http://localhost:3000`
-- El proxy de Vite reenvia `/api` hacia `localhost:3000`
+- Express corre en `http://localhost:3001`
+- El proxy de Vite reenvia `/api` hacia `localhost:3001`
 - `VITE_API_BASE_URL` debe quedar vacio
 
 ### 2. Produccion same-origin

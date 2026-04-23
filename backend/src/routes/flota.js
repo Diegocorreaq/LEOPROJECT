@@ -133,7 +133,7 @@ async function requireVehiculoActivo(db, vehiculoId) {
 router.get("/documentacion", async (req, res, next) => {
   try {
     const vehiculos = await prisma.vehiculo.findMany({
-      where: { estado: "ACTIVO" },
+      where: { estado: "ACTIVO", tipo: "PROPIO" },
       include: { propietarioSubcontratado: true, docsVehiculo: true },
       orderBy: { placa: "asc" },
     });

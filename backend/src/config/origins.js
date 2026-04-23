@@ -1,5 +1,16 @@
 const DEFAULT_DEV_ORIGINS = ["http://localhost:5173"];
 
+function isLocalLoopbackOrigin(origin) {
+  if (!origin || typeof origin !== "string") return false;
+
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  } catch (_err) {
+    return false;
+  }
+}
+
 function normalizeOrigin(value) {
   if (!value || typeof value !== "string") return null;
 
@@ -51,6 +62,10 @@ function isAllowedOrigin(origin, req, allowedOrigins = getAllowedOrigins()) {
   const normalizedOrigin = normalizeOrigin(origin);
   if (!normalizedOrigin) return false;
 
+  if (process.env.NODE_ENV !== "production" && isLocalLoopbackOrigin(normalizedOrigin)) {
+    return true;
+  }
+
   if (allowedOrigins.includes(normalizedOrigin)) {
     return true;
   }
@@ -64,5 +79,6 @@ module.exports = {
   getRequestOrigin,
   getServerOrigin,
   isAllowedOrigin,
+  isLocalLoopbackOrigin,
   normalizeOrigin,
 };
