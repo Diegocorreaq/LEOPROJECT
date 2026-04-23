@@ -16,6 +16,7 @@ import {
   X,
   ChevronRight,
   ChevronLeft,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ const navItems = [
   { label: "Facturación", icon: Receipt, href: "/facturacion" },
   { label: "Clientes", icon: Users, href: "/clientes" },
   { label: "Vehículos", icon: Car, href: "/vehiculos" },
+  { label: "Control de Flota", icon: ShieldCheck, href: "/flota" },
   { label: "Conductores", icon: UserCheck, href: "/conductores" },
   { label: "Rutas & Tarifas", icon: MapPin, href: "/rutas" },
   { label: "Libro de Compras", icon: BookOpen, href: "/compras" },
