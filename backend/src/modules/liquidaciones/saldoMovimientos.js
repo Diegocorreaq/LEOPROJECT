@@ -7,6 +7,7 @@ const {
   normalizeTipoMovimiento,
   toMoney,
 } = require("./settlement");
+const logger = require("../../lib/logger");
 
 const liquidacionSaldoMovimientoInclude = {
   conductor: {
@@ -44,6 +45,12 @@ function createDomainError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+function isMissingSaldoMovimientosTableError(error) {
+  if (!error || error.code !== "P2021") return false;
+  const detail = `${error.meta?.table ?? ""} ${error.meta?.modelName ?? ""} ${error.message ?? ""}`.toLowerCase();
+  return detail.includes("liquidacionsaldomovimiento");
 }
 
 function toDateOrNow(value) {
@@ -112,16 +119,26 @@ async function findMovimientosByLiquidacionIds(db, liquidacionIds = [], options 
   const includeRelations = options.includeRelations === true;
   const direction = options.orderDirection === "desc" ? "desc" : "asc";
 
-  return db.liquidacionSaldoMovimiento.findMany({
-    where: {
-      OR: [
-        { liquidacionOrigenId: { in: ids } },
-        { liquidacionDestinoId: { in: ids } },
-      ],
-    },
-    include: includeRelations ? liquidacionSaldoMovimientoInclude : undefined,
-    orderBy: [{ fechaMovimiento: direction }, { createdAt: direction }],
-  });
+  try {
+    return await db.liquidacionSaldoMovimiento.findMany({
+      where: {
+        OR: [
+          { liquidacionOrigenId: { in: ids } },
+          { liquidacionDestinoId: { in: ids } },
+        ],
+      },
+      include: includeRelations ? liquidacionSaldoMovimientoInclude : undefined,
+      orderBy: [{ fechaMovimiento: direction }, { createdAt: direction }],
+    });
+  } catch (error) {
+    if (!isMissingSaldoMovimientosTableError(error)) throw error;
+
+    logger.warn("Tabla LiquidacionSaldoMovimiento no disponible; se omite lectura de movimientos.", {
+      code: error.code,
+      meta: error.meta ?? null,
+    });
+    return [];
+  }
 }
 
 async function findMovimientosForLiquidacion(db, liquidacionId, options = {}) {
