@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Inter (sans) + Geist Mono (mono) are loaded via index.html */
+
 @layer base {
   :root {
     --background: 0 0% 100%;

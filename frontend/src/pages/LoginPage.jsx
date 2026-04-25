@@ -167,9 +167,10 @@ export default function LoginPage() {
             )}
 
             {/* Botón submit */}
-            <Button 
-              type="submit" 
-              className="w-full h-12 text-base font-medium bg-slate-900 hover:bg-slate-800 transition-colors" 
+            <Button
+              type="submit"
+              variant="brand"
+              className="w-full h-12 text-base font-medium"
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
