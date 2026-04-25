@@ -31,7 +31,7 @@ const patchGuiaSchema = z.object({
     (value) => {
       if (value === "" || value == null) return null;
       if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
-        return `${value.trim()}T00:00:00.000Z`;
+        return `${value.trim()}T12:00:00.000Z`;
       }
       return value;
     },

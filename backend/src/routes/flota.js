@@ -38,11 +38,11 @@ const componenteParamSchema = z.object({
 
 function getDocStatus(fechaVencimiento) {
   if (!fechaVencimiento) return "SIN_FECHA";
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
+  const hoy = todayDateOnly();
   const en30Dias = new Date(hoy);
   en30Dias.setDate(en30Dias.getDate() + 30);
-  const vence = new Date(fechaVencimiento);
+  const vence = parseDateOnly(fechaVencimiento);
+  if (!vence) return "SIN_FECHA";
   if (vence < hoy) return "VENCIDO";
   if (vence <= en30Dias) return "POR_VENCER";
   return "VIGENTE";
@@ -50,10 +50,23 @@ function getDocStatus(fechaVencimiento) {
 
 function getDiasRestantes(fechaVencimiento) {
   if (!fechaVencimiento) return null;
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const vence = new Date(fechaVencimiento);
+  const hoy = todayDateOnly();
+  const vence = parseDateOnly(fechaVencimiento);
+  if (!vence) return null;
   return Math.ceil((vence.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function parseDateOnly(value) {
+  if (!value) return null;
+  const part = String(value instanceof Date ? value.toISOString() : value).slice(0, 10);
+  const [year, month, day] = part.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+
+function todayDateOnly() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
 function getPorcentajeUso(kmAcumulado, kmPermitido) {

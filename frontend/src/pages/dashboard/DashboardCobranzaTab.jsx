@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { formatDateLong } from "@/lib/dateOnly";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -38,11 +39,7 @@ function formatPeriodo(periodo) {
 
 function formatDate(val) {
   if (!val) return "-";
-  return new Date(val).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateLong(val);
 }
 
 const ESTADO_PAGO_CLASS = {

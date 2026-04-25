@@ -9,7 +9,7 @@
  * Works equally for dates stored as T00:00:00.000Z or T12:00:00.000Z.
  */
 
-function parseDateOnly(iso) {
+export function parseDateOnly(iso) {
   if (!iso) return null;
   const part = iso.slice(0, 10);
   const [y, m, d] = part.split("-").map(Number);
@@ -42,4 +42,9 @@ export function todayDateInputValue() {
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+export function todayDateOnly() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }

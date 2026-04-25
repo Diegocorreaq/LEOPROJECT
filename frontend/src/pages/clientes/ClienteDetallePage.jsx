@@ -5,8 +5,14 @@ import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import { formatDateLong } from "@/lib/dateOnly";
 
 function formatDate(value) {
+  if (!value) return "No disponible";
+  return formatDateLong(value);
+}
+
+function formatTimestampDate(value) {
   if (!value) return "No disponible";
   return new Date(value).toLocaleDateString("es-CO", {
     year: "numeric",
@@ -132,7 +138,7 @@ export default function ClienteDetallePage() {
             <InfoRow label="Email" value={cliente.email || "Sin email"} />
             <InfoRow label="Telefono" value={cliente.telefono || "Sin telefono"} />
             <InfoRow label="Direccion" value={cliente.direccion || "Sin direccion"} />
-            <InfoRow label="Creado" value={formatDate(cliente.createdAt)} />
+            <InfoRow label="Creado" value={formatTimestampDate(cliente.createdAt)} />
           </Section>
 
           <Section title="Servicios recientes">

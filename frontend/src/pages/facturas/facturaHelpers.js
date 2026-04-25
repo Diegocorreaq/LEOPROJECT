@@ -1,4 +1,4 @@
-import { formatDateShort, formatDateLong } from "@/lib/dateOnly";
+import { formatDateShort, formatDateLong, parseDateOnly, todayDateOnly } from "@/lib/dateOnly";
 
 export function fmtTotal(val, moneda) {
   if (val == null) return "-";
@@ -18,15 +18,17 @@ export function fechaLarga(iso) {
 export function isFacturaVencida(f) {
   if (!f?.fechaVencimiento) return false;
   if (f.estadoPago === "PAGADA" || f.estadoPago === "ANULADA") return false;
-  return new Date(f.fechaVencimiento) < new Date();
+  const venc = parseDateOnly(f.fechaVencimiento);
+  return !!venc && venc < todayDateOnly();
 }
 
 // Por vencer: vence entre hoy y los próximos 7 días, excluyendo PAGADA/ANULADA
 export function isFacturaPorVencer(f) {
   if (!f?.fechaVencimiento) return false;
   if (f.estadoPago === "PAGADA" || f.estadoPago === "ANULADA") return false;
-  const venc = new Date(f.fechaVencimiento);
-  const hoy = new Date();
+  const venc = parseDateOnly(f.fechaVencimiento);
+  if (!venc) return false;
+  const hoy = todayDateOnly();
   const en7dias = new Date(hoy);
   en7dias.setDate(en7dias.getDate() + 7);
   return venc >= hoy && venc <= en7dias;

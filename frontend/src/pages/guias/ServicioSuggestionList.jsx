@@ -3,11 +3,11 @@ import { AlertCircle, CheckCircle, Search, Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
+import { formatDateShort } from "@/lib/dateOnly";
 
 function fechaCorta(iso) {
   if (!iso) return "-";
-  const d = new Date(iso);
-  return d.toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
+  return formatDateShort(iso);
 }
 
 function matchesSearch(servicio, rawQuery) {

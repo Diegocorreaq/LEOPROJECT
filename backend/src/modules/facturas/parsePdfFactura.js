@@ -58,15 +58,19 @@ async function parsePdfFactura(pdfBuffer) {
 
   function parsePeDate(raw) {
     if (!raw) return null;
+    const trimmed = raw.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const dt = new Date(`${trimmed}T12:00:00.000Z`);
+      return isNaN(dt.getTime()) ? null : dt.toISOString();
+    }
     const parts = raw.split(/[\/\-]/);
     if (parts.length !== 3) return null;
     const [d, mo, y] = parts;
     if (y.length !== 4) {
-      // Puede ser YYYY-MM-DD
-      const dt = new Date(raw);
+      const dt = new Date(trimmed);
       return isNaN(dt.getTime()) ? null : dt.toISOString();
     }
-    const dt = new Date(`${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`);
+    const dt = new Date(`${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}T12:00:00.000Z`);
     return isNaN(dt.getTime()) ? null : dt.toISOString();
   }
 

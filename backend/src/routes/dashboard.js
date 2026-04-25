@@ -54,6 +54,30 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
+function parseDateOnly(value) {
+  if (!value) return null;
+  const part = String(value instanceof Date ? value.toISOString() : value).slice(0, 10);
+  const [year, month, day] = part.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+
+function todayDateOnly() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function daysFromToday(dateValue) {
+  const date = parseDateOnly(dateValue);
+  if (!date) return null;
+  return Math.floor((todayDateOnly().getTime() - date.getTime()) / 86400000);
+}
+
+function isPastDateOnly(dateValue) {
+  const days = daysFromToday(dateValue);
+  return days != null && days > 0;
+}
+
 /** Resuelve rango de fechas para el dashboard general */
 function resolveGeneralRange(rango, desde, hasta) {
   const ahora = new Date();
@@ -219,7 +243,7 @@ router.get("/general", async (req, res, next) => {
 
       const esVencida =
         factura.fechaVencimiento != null &&
-        new Date(factura.fechaVencimiento) < hoyStart &&
+        isPastDateOnly(factura.fechaVencimiento) &&
         payment.saldo > 0;
       if (esVencida) facturasVencidasCount++;
     }
@@ -330,7 +354,7 @@ router.get("/general", async (req, res, next) => {
       }),
       prisma.factura.findMany({
         where: {
-          fechaVencimiento: { lt: hoyStart },
+          fechaVencimiento: { lt: hoyEnd },
           estadoPago: { not: ESTADO_ANULADA },
         },
         orderBy: { fechaVencimiento: "asc" },
@@ -454,7 +478,7 @@ router.get("/general", async (req, res, next) => {
           f.estadoPago,
           f.detraccionMonto
         );
-        return !payment.isClosed && payment.saldo > 0;
+        return !payment.isClosed && payment.saldo > 0 && isPastDateOnly(f.fechaVencimiento);
       })
       .slice(0, 10)
       .map((f) => {
@@ -474,9 +498,7 @@ router.get("/general", async (req, res, next) => {
           estadoPago: payment.status,
           moneda: f.moneda,
           cliente: f.cliente,
-          diasAtraso: Math.floor(
-            (ahora.getTime() - new Date(f.fechaVencimiento).getTime()) / 86400000,
-          ),
+          diasAtraso: daysFromToday(f.fechaVencimiento) ?? 0,
         };
       });
 
@@ -632,7 +654,7 @@ router.get("/cobranza", async (req, res, next) => {
 
       const esVencida =
         f.fechaVencimiento != null &&
-        new Date(f.fechaVencimiento) < ahora &&
+        isPastDateOnly(f.fechaVencimiento) &&
         saldo > 0;
 
       if (esVencida) facturasVencidasCount++;
@@ -640,9 +662,7 @@ router.get("/cobranza", async (req, res, next) => {
 
       // Aging (solo si tiene fechaVencimiento y tiene saldo)
       if (f.fechaVencimiento != null && saldo > 0) {
-        const diasAtraso = Math.floor(
-          (ahora.getTime() - new Date(f.fechaVencimiento).getTime()) / 86400000,
-        );
+        const diasAtraso = daysFromToday(f.fechaVencimiento) ?? 0;
         if (diasAtraso < 0) agingBuckets.porVencer += saldo;
         else if (diasAtraso <= 7) agingBuckets.vencido_1_7 += saldo;
         else if (diasAtraso <= 15) agingBuckets.vencido_8_15 += saldo;
@@ -670,9 +690,7 @@ router.get("/cobranza", async (req, res, next) => {
 
       // Facturas críticas (vencidas con saldo)
       if (esVencida) {
-        const diasAtraso = Math.floor(
-          (ahora.getTime() - new Date(f.fechaVencimiento).getTime()) / 86400000,
-        );
+        const diasAtraso = daysFromToday(f.fechaVencimiento) ?? 0;
         facturasCriticasList.push({
           id: f.id,
           numeroCompleto: `${f.serie}-${f.numero}`,

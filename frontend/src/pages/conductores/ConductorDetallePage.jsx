@@ -5,8 +5,14 @@ import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import { formatDateLong } from "@/lib/dateOnly";
 
 function formatDate(value) {
+  if (!value) return "No disponible";
+  return formatDateLong(value);
+}
+
+function formatTimestampDate(value) {
   if (!value) return "No disponible";
   return new Date(value).toLocaleDateString("es-CO", {
     year: "numeric",
@@ -190,7 +196,7 @@ export default function ConductorDetallePage() {
                       <span className="text-sm text-slate-600">{formatCurrency(liquidacion.saldo)}</span>
                     </div>
                     <p className="mt-1 text-sm text-slate-500">
-                      {formatDate(liquidacion.createdAt)} · Gastos {formatCurrency(liquidacion.totalGastos)}
+                      {formatTimestampDate(liquidacion.createdAt)} · Gastos {formatCurrency(liquidacion.totalGastos)}
                     </p>
                   </button>
                 ))}

@@ -27,10 +27,18 @@ const COMPONENTES_KM_LABELS = {
   EMBRAGUE: "Embrague",
 };
 
+function normalizeDateOnly(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return `${value.trim()}T12:00:00.000Z`;
+  }
+  return value;
+}
+
 const upsertDocVehiculoSchema = z
   .object({
     fechaVencimiento: z.preprocess(
-      (value) => (value == null || value === "" ? null : value),
+      normalizeDateOnly,
       z.coerce.date().nullable().optional(),
     ),
     observacion: z

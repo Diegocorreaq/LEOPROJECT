@@ -72,6 +72,13 @@ function getTipoContrato(servicio) {
   return servicio?.vehiculo?.tipo === "SUBCONTRATADO" ? "SUBCONTRATADO" : "PROPIO";
 }
 
+function toCalendarDate(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return new Date(`${value.trim()}T12:00:00.000Z`);
+  }
+  return new Date(value);
+}
+
 function formatUbigeoDisplay(ubigeo) {
   return `${ubigeo.distrito} - ${ubigeo.departamento}`;
 }
@@ -369,7 +376,7 @@ router.post("/", async (req, res, next) => {
 
       return tx.servicio.create({
         data: {
-          fechaServicio: new Date(body.fechaServicio),
+          fechaServicio: toCalendarDate(body.fechaServicio),
           origen: ruta.origen,
           destino: ruta.destino,
           origenUbigeoCodigo: ruta.origenUbigeo.codigo,
@@ -508,7 +515,7 @@ router.put("/:id", async (req, res, next) => {
       return tx.servicio.update({
         where: { id: existing.id },
         data: {
-          ...(body.fechaServicio !== undefined && { fechaServicio: new Date(body.fechaServicio) }),
+          ...(body.fechaServicio !== undefined && { fechaServicio: toCalendarDate(body.fechaServicio) }),
           ...(origenActualizado && {
             origen: finalOrigen,
             origenUbigeoCodigo: finalOrigenUbigeoCodigo,

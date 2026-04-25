@@ -5,14 +5,11 @@ import { Button } from "@/components/ui/button";
 import ConfirmModal from "@/components/ui/confirm-modal";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import { formatDateLong } from "@/lib/dateOnly";
 
 function formatDate(value) {
   if (!value) return "No disponible";
-  return new Date(value).toLocaleDateString("es-CO", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatDateLong(value);
 }
 
 function formatNumber(value) {

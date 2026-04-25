@@ -13,16 +13,13 @@ import {
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { formatDateLong } from "@/lib/dateOnly";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function formatDate(val) {
   if (!val) return "-";
-  return new Date(val).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateLong(val);
 }
 
 function pct(num, total) {

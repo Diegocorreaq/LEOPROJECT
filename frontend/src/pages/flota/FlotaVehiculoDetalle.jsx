@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatDateOnly, toDateInputValue } from "@/lib/dateOnly";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -50,12 +51,7 @@ const ESTADO_MANT_CFG = {
 
 function formatFecha(iso) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
-
-function toDateInputValue(iso) {
-  if (!iso) return "";
-  return new Date(iso).toISOString().split("T")[0];
+  return formatDateOnly(iso, { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 // ── Formulario de documento ───────────────────────────────────────────────────

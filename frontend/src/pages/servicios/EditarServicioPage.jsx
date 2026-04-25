@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { todayDateInputValue, toDateInputValue } from "@/lib/dateOnly";
 import {
   TIPOS_DOCUMENTO_CONDUCTOR,
   getDocumentoConductorConfig,
@@ -45,8 +46,8 @@ function buildForm(s) {
   const tipoContrato = esPropio ? "PROPIO" : "SUBCONTRATADO";
 
   const fechaServicio = s.fechaServicio
-    ? new Date(s.fechaServicio).toISOString().split("T")[0]
-    : new Date().toISOString().split("T")[0];
+    ? toDateInputValue(s.fechaServicio)
+    : todayDateInputValue();
 
   if (esPropio) {
     const cond = s.conductor;
